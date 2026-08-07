@@ -33,6 +33,9 @@ yarn-error.log*
 .env
 .env*.local
 
+# generated SQL holding credentials (admin bcrypt hash)
+*.local.sql
+
 # vercel
 .vercel
 

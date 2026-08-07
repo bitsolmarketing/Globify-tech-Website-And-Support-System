@@ -2,7 +2,7 @@ import 'server-only'
 
 import { randomUUID } from 'node:crypto'
 
-import { and, count, desc, eq, gte, ilike, or, sql, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, gte, like, or, sql, type SQL } from 'drizzle-orm'
 
 import { getDb } from '@/db'
 import { leads, type LeadRow, type LeadStatus } from '@/db/schema'
@@ -18,12 +18,18 @@ export type NewLead = {
   campaign?: string
 }
 
+/**
+ * MySQL has no `RETURNING`, so the row is read back by its generated id.
+ * The id is created here rather than by the database, which keeps that a
+ * single extra SELECT instead of a round-trip for `LAST_INSERT_ID()`.
+ */
 export async function createLead(input: NewLead): Promise<LeadRow> {
-  const [row] = await getDb()
-    .insert(leads)
-    .values({ id: randomUUID(), ...input })
-    .returning()
+  const id = randomUUID()
+  const db = getDb()
 
+  await db.insert(leads).values({ id, ...input })
+
+  const [row] = await db.select().from(leads).where(eq(leads.id, id)).limit(1)
   return row
 }
 
@@ -38,12 +44,14 @@ function buildWhere(filters: LeadFilters): SQL | undefined {
   const clauses: SQL[] = []
 
   if (filters.search) {
+    // `like` is already case-insensitive: every column collates as
+    // utf8mb4_unicode_ci, which is why there is no `ilike` equivalent here.
     const term = `%${filters.search}%`
     const match = or(
-      ilike(leads.name, term),
-      ilike(leads.email, term),
-      ilike(leads.phone, term),
-      ilike(leads.message, term),
+      like(leads.name, term),
+      like(leads.email, term),
+      like(leads.phone, term),
+      like(leads.message, term),
     )
     if (match) clauses.push(match)
   }

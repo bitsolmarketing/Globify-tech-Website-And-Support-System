@@ -1,5 +1,5 @@
 /**
- * Postgres connection (Neon, Supabase or any standard Postgres).
+ * MariaDB / MySQL connection.
  *
  * Deliberately free of `server-only` so the seed script and drizzle-kit can
  * import it from a plain Node process. The data layer in `src/lib/data/` is
@@ -9,12 +9,12 @@
  * hoisted, so a script that calls `dotenv` in its body would otherwise find
  * this module already initialised with an empty value.
  */
-import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
+import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2'
+import mysql from 'mysql2/promise'
 
 import * as schema from './schema'
 
-export type Database = PostgresJsDatabase<typeof schema>
+export type Database = MySql2Database<typeof schema>
 
 export function databaseUrl(): string {
   return process.env.DATABASE_URL?.trim() ?? ''
@@ -29,21 +29,27 @@ export function isDatabaseConfigured(): boolean {
 }
 
 /* Re-used across HMR reloads and across lambda invocations — creating a new
-   pool per request exhausts Postgres connection limits very quickly. */
+   pool per request exhausts MySQL's connection limit very quickly. Shared
+   hosting caps concurrent connections aggressively, so keep `connectionLimit`
+   low. */
 const globalForDb = globalThis as unknown as {
-  __globifySql?: ReturnType<typeof postgres>
+  __globifyPool?: mysql.Pool
   __globifyDb?: Database
 }
 
-function createClient(url: string) {
-  return postgres(url, {
-    // Supabase's pooler and Neon's pgbouncer endpoint both reject the extended
-    // protocol's prepared statements in transaction mode.
-    prepare: false,
-    max: 5,
+function createPool(url: string): mysql.Pool {
+  return mysql.createPool({
+    uri: url,
+    connectionLimit: 5,
+    waitForConnections: true,
     // Lets `next build` exit cleanly instead of hanging on an open socket.
-    idle_timeout: 20,
-    connect_timeout: 15,
+    idleTimeout: 20_000,
+    connectTimeout: 15_000,
+    // DATETIME columns are stored as UTC; returning strings would break the
+    // Date-typed schema columns, so let mysql2 hydrate them.
+    timezone: 'Z',
+    charset: 'utf8mb4_unicode_ci',
+    supportBigNumbers: true,
   })
 }
 
@@ -53,13 +59,13 @@ export function getDb(): Database {
 
   if (!url) {
     throw new Error(
-      'DATABASE_URL is not set. The admin requires a Postgres database — see README › Admin setup.',
+      'DATABASE_URL is not set. The admin requires a MySQL/MariaDB database — see README › Admin setup.',
     )
   }
 
   if (!globalForDb.__globifyDb) {
-    globalForDb.__globifySql = globalForDb.__globifySql ?? createClient(url)
-    globalForDb.__globifyDb = drizzle(globalForDb.__globifySql, { schema })
+    globalForDb.__globifyPool = globalForDb.__globifyPool ?? createPool(url)
+    globalForDb.__globifyDb = drizzle(globalForDb.__globifyPool, { schema, mode: 'default' })
   }
 
   return globalForDb.__globifyDb
@@ -72,8 +78,8 @@ export function tryGetDb(): Database | null {
 
 /** Seed/migration scripts call this so the Node process can exit. */
 export async function closeDb(): Promise<void> {
-  await globalForDb.__globifySql?.end({ timeout: 5 })
-  globalForDb.__globifySql = undefined
+  await globalForDb.__globifyPool?.end()
+  globalForDb.__globifyPool = undefined
   globalForDb.__globifyDb = undefined
 }
 

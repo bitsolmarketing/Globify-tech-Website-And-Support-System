@@ -2,7 +2,7 @@
 
 A production-ready marketing and content site for **Globify Tech Institute, Faisalabad**, built around the **14 August Azadi Sale (50% OFF all courses)** campaign.
 
-Built with **Next.js 15 (App Router)**, **React 19**, **TypeScript (strict)**, **Tailwind CSS v4**, **Framer Motion** and **Radix UI** primitives in the shadcn/ui style. Content is stored in **Postgres** via **Drizzle ORM** and edited through an authenticated admin at `/admin` (**Auth.js**), while the public site stays fully pre-rendered.
+Built with **Next.js 15 (App Router)**, **React 19**, **TypeScript (strict)**, **Tailwind CSS v4**, **Framer Motion** and **Radix UI** primitives in the shadcn/ui style. Content is stored in **MariaDB/MySQL** via **Drizzle ORM** and edited through an authenticated admin at `/admin` (**Auth.js**), while the public site stays fully pre-rendered.
 
 > **Status:** builds clean, lints clean, typechecks clean. 80 public pages pre-rendered; only `/admin` and the API routes are dynamic. Deployable to Vercel — the public site needs no configuration, the admin needs a database.
 
@@ -26,7 +26,7 @@ npm run assets                 # regenerate placeholder WebP media
 
 npm run db:generate            # regenerate SQL migrations from src/db/schema.ts
 npm run db:migrate             # apply pending migrations
-npm run db:seed                # import the file content into Postgres (idempotent)
+npm run db:seed                # import the file content into MariaDB (idempotent)
 npm run db:studio              # browse the database in Drizzle Studio
 ```
 
@@ -59,7 +59,7 @@ npm run db:studio              # browse the database in Drizzle Studio
 | `/privacy-policy`, `/terms` | Static | Full legal content |
 | `/sitemap.xml`, `/robots.txt`, `/feed.xml`, `/manifest.webmanifest` | Generated | 70 sitemap URLs, RSS 2.0 with 10 items |
 | `/api/og` | Dynamic | Automatic Open Graph image generation |
-| `/api/contact`, `/api/newsletter` | Dynamic | Validated, rate-limited endpoints that store submissions in Postgres |
+| `/api/contact`, `/api/newsletter` | Dynamic | Validated, rate-limited endpoints that store submissions in MariaDB |
 | `not-found` | Static | Branded 404 with course suggestions |
 | `/admin/*` | Dynamic | Authenticated dashboard — noindex, middleware-gated, excluded from the sitemap |
 
@@ -70,7 +70,7 @@ npm run db:studio              # browse the database in Drizzle Studio
 - **5 instructors/authors** who double as blog authors and course leads
 - **19 site FAQs**, **12 testimonials**, **12 gallery items**, **8 milestones**, **6 statistics**
 
-All of it is imported into Postgres by `npm run db:seed` and editable at `/admin` thereafter. The files it was imported from stay in the repo as the seed payload and the no-database fallback.
+All of it is imported into MariaDB by `npm run db:seed` and editable at `/admin` thereafter. The files it was imported from stay in the repo as the seed payload and the no-database fallback.
 
 ---
 
@@ -92,7 +92,7 @@ All of it is imported into Postgres by `npm run db:seed` and editable at `/admin
     ├── middleware.ts             Gates /admin/* only
     ├── db/
     │   ├── schema.ts             Drizzle tables, typed from the existing TS types
-    │   ├── index.ts              Lazy Postgres connection (Neon / Supabase / local)
+    │   ├── index.ts              Lazy MySQL/MariaDB connection pool (mysql2)
     │   └── seed.ts               One-off import of the file content
     ├── components/
     │   ├── ui/                   shadcn-style primitives (button, card, badge, accordion, field, toaster)
@@ -126,9 +126,9 @@ All of it is imported into Postgres by `npm run db:seed` and editable at `/admin
 
 ### Design decisions worth knowing
 
-**One source of truth per concern.** Change a phone number in `src/lib/site.ts` and it updates the footer, the WhatsApp deep link, the LocalBusiness JSON-LD and the contact page together. The same applies to navigation. Course fees, campaign dates and every other editable value now live in Postgres and are changed at `/admin`.
+**One source of truth per concern.** Change a phone number in `src/lib/site.ts` and it updates the footer, the WhatsApp deep link, the LocalBusiness JSON-LD and the contact page together. The same applies to navigation. Course fees, campaign dates and every other editable value now live in MariaDB and are changed at `/admin`.
 
-**The TypeScript types remain the source of truth.** `src/db/schema.ts` types its `jsonb` columns straight off `Course`, `Author`, `Testimonial` and `PostFrontmatter` — change one of those types and the matching column stops compiling. There is no second, hand-maintained definition of a course to keep in sync.
+**The TypeScript types remain the source of truth.** `src/db/schema.ts` types its `json` columns straight off `Course`, `Author`, `Testimonial` and `PostFrontmatter` — change one of those types and the matching column stops compiling. There is no second, hand-maintained definition of a course to keep in sync.
 
 **Editing content never makes the site dynamic.** Reads are cached with tags; writes invalidate the tag *and* the pre-rendered HTML. The public pages stay in the static/ISR path, so an admin edit costs one regeneration on next request rather than server rendering on every visit.
 
@@ -234,15 +234,21 @@ inboxes for contact-form leads and newsletter subscribers.
 
 ### 1. Create a database
 
-Any standard Postgres works — Neon, Supabase or local. On Neon and Supabase copy
-the **pooled** connection string (`-pooler` on Neon, port `6543` on Supabase);
-prepared statements are already disabled in `src/db/index.ts`, so pgbouncer
-transaction mode works without further configuration.
+Any standard MySQL or MariaDB works. The live database is MariaDB 11.8 on
+Hostinger shared hosting, created through hPanel › Databases › MySQL Databases.
+
+Two things to watch:
+
+- **Percent-encode the password** in `DATABASE_URL`. A literal `+` must be
+  written `%2B`, or the URI parser reads it as a space and authentication fails.
+- **Connecting from outside the server** — including local development and any
+  build machine — needs the public IP added under hPanel › Databases ›
+  **Remote MySQL**. From the server itself, use `localhost`.
 
 ### 2. Fill in the environment
 
 ```bash
-DATABASE_URL=postgresql://…            # required for the admin
+DATABASE_URL=mysql://user:pass@host:3306/db   # required for the admin
 AUTH_SECRET=…                          # generate with: npx auth secret
 ADMIN_EMAIL=admin@globifytech.com
 ADMIN_PASSWORD=…                       # min 12 chars, bcrypt-hashed at seed time
@@ -257,7 +263,7 @@ npm run db:seed        # imports the file content + creates the admin user
 ```
 
 The seed reads `src/lib/courses.ts`, `content.ts`, `authors.ts`, `site.ts` and
-`content/blog/*.mdx` and writes them into Postgres. It is **idempotent**: every
+`content/blog/*.mdx` and writes them into MariaDB. It is **idempotent**: every
 insert upserts on a natural key and nothing is ever deleted, so re-running it
 refreshes the seeded rows while leaving anything authored in the admin alone.
 Re-running it is also how you rotate the admin password.
@@ -267,7 +273,7 @@ Then sign in at `/admin/login`.
 ### How content flows after the migration
 
 ```
-src/lib/*.ts, content/blog/*.mdx  ──seed──▶  Postgres  ──▶  src/lib/data/*  ──▶  public pages
+src/lib/*.ts, content/blog/*.mdx  ──seed──▶  MariaDB   ──▶  src/lib/data/*  ──▶  public pages
       (seed + no-database fallback)              ▲             (tagged, cached reads)
                                                  │
                                         /admin server actions
@@ -285,7 +291,7 @@ their next request.
 **Nothing breaks without a database.** If `DATABASE_URL` is unset — or the
 database is unreachable at build time — the data layer falls back to the seed
 content still checked into the repo, and logs loudly. A fresh clone builds and
-runs with zero setup; only the admin actually requires Postgres.
+runs with zero setup; only the admin actually requires MariaDB.
 
 ### Screens
 
@@ -357,7 +363,7 @@ CONTACT_FORM_TO_EMAIL
 NEWSLETTER_WEBHOOK_URL                  # optional provider sync
 
 # Admin — required for /admin, see "Admin setup" above
-DATABASE_URL                            # Neon / Supabase / any Postgres (pooled)
+DATABASE_URL                            # any MySQL / MariaDB (password percent-encoded)
 AUTH_SECRET                             # npx auth secret
 ADMIN_EMAIL                             # read once by `npm run db:seed`
 ADMIN_PASSWORD                          # min 12 chars, bcrypt-hashed before storage
@@ -381,8 +387,8 @@ No build configuration, no `vercel.json`, no post-install steps. `prebuild`
 regenerates the media, `next build` pre-renders all 80 public pages.
 
 The build reads content from the database when `DATABASE_URL` is set, so the
-build machine needs network access to it — Neon and Supabase both allow this by
-default. If it is unreachable the build still succeeds against the seed content
+build machine needs network access to it — on Hostinger that means adding the
+build machine IP under hPanel > Databases > Remote MySQL. If it is unreachable the build still succeeds against the seed content
 rather than failing, and logs which reads fell back.
 
 **After the first deploy:** submit `/sitemap.xml` in Google Search Console, add
