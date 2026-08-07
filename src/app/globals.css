@@ -1,0 +1,631 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 scans these paths for class names. */
+@source '../';
+@source '../../content/';
+
+/* ==========================================================================
+   DESIGN TOKENS — Globify Tech Institute
+   Primary : Pakistan Green  #01411C
+   Accent  : Gold            #D4AF37
+   Hover   : Emerald Green
+   ========================================================================== */
+@theme {
+  /* --- Brand green (Pakistan Green anchored at 900) --- */
+  --color-brand-50: #ecfdf3;
+  --color-brand-100: #d1fadf;
+  --color-brand-200: #a6f4c5;
+  --color-brand-300: #6ce9a6;
+  --color-brand-400: #32d583;
+  --color-brand-500: #12b76a;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #05603a;
+  --color-brand-900: #01411c;
+  --color-brand-950: #012a12;
+
+  /* --- Gold accent --- */
+  --color-gold-50: #fdfaef;
+  --color-gold-100: #faf2d3;
+  --color-gold-200: #f4e3a2;
+  --color-gold-300: #ecce6b;
+  --color-gold-400: #e2b944;
+  --color-gold-500: #d4af37;
+  --color-gold-600: #b8912a;
+  --color-gold-700: #936d24;
+  --color-gold-800: #7a5825;
+  --color-gold-900: #684a24;
+  --color-gold-950: #3d2810;
+
+  /* --- Neutrals --- */
+  --color-ink-50: #f8fafc;
+  --color-ink-100: #f1f5f9;
+  --color-ink-200: #e2e8f0;
+  --color-ink-300: #cbd5e1;
+  --color-ink-400: #94a3b8;
+  --color-ink-500: #64748b;
+  --color-ink-600: #475569;
+  --color-ink-700: #334155;
+  --color-ink-800: #1e293b;
+  --color-ink-900: #0f172a;
+  --color-ink-950: #020617;
+
+  /* --- Semantic surfaces --- */
+  --color-canvas: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-hairline: #e6e9ef;
+
+  /* --- Typography --- */
+  --font-heading: var(--font-montserrat), 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Times New Roman', Times, 'Liberation Serif', Georgia, serif;
+  --font-sans: var(--font-montserrat), system-ui, sans-serif;
+
+  /* --- Radii --- */
+  --radius-xs: 0.375rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+
+  /* --- Elevation (soft, premium — never harsh) --- */
+  --shadow-soft: 0 1px 2px rgb(2 6 23 / 0.04), 0 8px 24px -12px rgb(2 6 23 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(2 6 23 / 0.04), 0 18px 40px -18px rgb(2 6 23 / 0.22);
+  --shadow-glow: 0 0 0 1px rgb(212 175 55 / 0.25), 0 20px 50px -20px rgb(1 65 28 / 0.45);
+
+  /* --- Motion --- */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* --- Breakpoints (adds ultra-wide) --- */
+  --breakpoint-3xl: 120rem;
+
+  /* --- Keyframe-backed animations --- */
+  --animate-float: float 7s var(--ease-out-expo) infinite;
+  --animate-float-slow: float 11s var(--ease-out-expo) infinite;
+  --animate-shimmer: shimmer 2.6s linear infinite;
+  --animate-marquee: marquee 38s linear infinite;
+  --animate-gradient: gradient-pan 9s ease infinite;
+  --animate-accordion-down: accordion-down 0.24s var(--ease-out-expo);
+  --animate-accordion-up: accordion-up 0.2s var(--ease-out-expo);
+  --animate-ripple: ripple 0.6s ease-out forwards;
+
+  /* Overlay / sheet transitions (replaces tailwindcss-animate) */
+  --animate-fade-in: fade-in 0.24s ease-out;
+  --animate-fade-out: fade-out 0.2s ease-in;
+  --animate-slide-in-right: slide-in-right 0.32s var(--ease-out-expo);
+  --animate-slide-out-right: slide-out-right 0.24s var(--ease-out-expo);
+  --animate-zoom-in: zoom-in 0.28s var(--ease-out-expo);
+  --animate-zoom-out: zoom-out 0.2s ease-in;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes slide-out-right {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+@keyframes zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes zoom-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, -14px, 0) rotate(2.5deg);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -160% 0;
+  }
+  100% {
+    background-position: 260% 0;
+  }
+}
+
+@keyframes marquee {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes gradient-pan {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes ripple {
+  from {
+    transform: scale(0);
+    opacity: 0.45;
+  }
+  to {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-hairline);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* Offset for the sticky header when jumping to #anchors */
+    scroll-padding-top: 6.5rem;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink-700);
+    font-family: var(--font-body);
+    font-size: 1.0625rem;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    color: var(--color-ink-900);
+    font-weight: 800;
+    letter-spacing: -0.022em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Visible, on-brand focus ring for keyboard users only. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 3px;
+    border-radius: var(--radius-xs);
+  }
+
+  ::selection {
+    background-color: var(--color-brand-900);
+    color: #fff;
+  }
+
+  /* Respect the OS-level motion preference. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ==========================================================================
+   COMPONENT UTILITIES
+   ========================================================================== */
+@utility container-page {
+  width: 100%;
+  margin-inline: auto;
+  max-width: 80rem;
+  padding-inline: 1.25rem;
+  @media (min-width: 40rem) {
+    padding-inline: 2rem;
+  }
+  @media (min-width: 80rem) {
+    padding-inline: 2.5rem;
+  }
+}
+
+@utility section-y {
+  padding-block: 4.5rem;
+  @media (min-width: 48rem) {
+    padding-block: 6.5rem;
+  }
+  @media (min-width: 80rem) {
+    padding-block: 7.5rem;
+  }
+}
+
+/* Gold-on-green gradient text used for campaign headlines. */
+@utility text-gradient-gold {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-gold-600) 0%,
+    var(--color-gold-400) 35%,
+    var(--color-gold-200) 50%,
+    var(--color-gold-400) 65%,
+    var(--color-gold-600) 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: var(--animate-shimmer);
+}
+
+@utility text-gradient-brand {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-brand-900),
+    var(--color-brand-600),
+    var(--color-brand-800)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Subtle frosted panel. Used sparingly — over imagery/gradients only. */
+@utility glass {
+  background-color: color-mix(in oklab, #fff 62%, transparent);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid color-mix(in oklab, #fff 55%, transparent);
+}
+
+@utility glass-dark {
+  background-color: color-mix(in oklab, var(--color-brand-950) 45%, transparent);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid color-mix(in oklab, #fff 14%, transparent);
+}
+
+/* Screen-reader-only helper (skip links, form hints). */
+@utility sr-only-focusable {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+  &:focus {
+    position: fixed;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+}
+
+/* Hairline grid used behind hero / CTA bands. */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, rgb(1 65 28 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(1 65 28 / 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+@utility bg-grid-light {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px);
+  background-size: 56px 56px;
+}
+
+/* ==========================================================================
+   LONG-FORM ARTICLE TYPOGRAPHY (blog posts, policy pages)
+   Hand-rolled instead of @tailwindcss/typography — one less dependency and
+   full control over the brand voice.
+   ========================================================================== */
+@layer components {
+  .article {
+    font-size: 1.125rem;
+    line-height: 1.85;
+    color: var(--color-ink-700);
+  }
+
+  .article > * + * {
+    margin-top: 1.35em;
+  }
+
+  .article h2 {
+    font-size: clamp(1.6rem, 1.15rem + 1.6vw, 2.1rem);
+    margin-top: 2.6em;
+    margin-bottom: 0.7em;
+    scroll-margin-top: 7rem;
+    position: relative;
+    padding-top: 1.4rem;
+    border-top: 1px solid var(--color-hairline);
+  }
+
+  .article h3 {
+    font-size: clamp(1.25rem, 1rem + 0.9vw, 1.5rem);
+    margin-top: 2em;
+    margin-bottom: 0.55em;
+    scroll-margin-top: 7rem;
+    color: var(--color-brand-900);
+  }
+
+  .article h4 {
+    font-size: 1.1rem;
+    margin-top: 1.6em;
+    margin-bottom: 0.4em;
+    scroll-margin-top: 7rem;
+    color: var(--color-ink-800);
+  }
+
+  .article a {
+    color: var(--color-brand-700);
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklab, var(--color-brand-500) 45%, transparent);
+    text-underline-offset: 3px;
+    transition: color 0.2s, text-decoration-color 0.2s;
+  }
+
+  .article a:hover {
+    color: var(--color-brand-600);
+    text-decoration-color: var(--color-brand-500);
+  }
+
+  .article strong {
+    color: var(--color-ink-900);
+    font-weight: 700;
+  }
+
+  .article ul,
+  .article ol {
+    padding-left: 1.35rem;
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .article ul {
+    list-style: none;
+    padding-left: 0.25rem;
+  }
+
+  .article ul > li {
+    position: relative;
+    padding-left: 1.65rem;
+  }
+
+  .article ul > li::before {
+    content: '';
+    position: absolute;
+    left: 0.25rem;
+    top: 0.72em;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, var(--color-gold-400), var(--color-brand-600));
+  }
+
+  .article ol {
+    list-style: decimal;
+  }
+
+  .article ol > li::marker {
+    color: var(--color-brand-700);
+    font-weight: 700;
+  }
+
+  .article blockquote {
+    border-left: 4px solid var(--color-gold-400);
+    background: linear-gradient(
+      100deg,
+      color-mix(in oklab, var(--color-gold-50) 90%, transparent),
+      transparent
+    );
+    padding: 1.15rem 1.4rem;
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+    font-style: italic;
+    color: var(--color-ink-800);
+  }
+
+  .article blockquote p {
+    margin: 0;
+  }
+
+  .article table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+    font-family: var(--font-heading);
+  }
+
+  .article :is(table) {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .article th,
+  .article td {
+    border: 1px solid var(--color-hairline);
+    padding: 0.7rem 0.9rem;
+    text-align: left;
+  }
+
+  .article thead th {
+    background-color: var(--color-brand-900);
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .article tbody tr:nth-child(even) {
+    background-color: var(--color-ink-50);
+  }
+
+  .article code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.875em;
+    background-color: var(--color-ink-100);
+    padding: 0.15em 0.4em;
+    border-radius: var(--radius-xs);
+    color: var(--color-brand-800);
+  }
+
+  .article pre {
+    background-color: var(--color-ink-950);
+    color: var(--color-ink-100);
+    padding: 1.15rem;
+    border-radius: var(--radius-lg);
+    overflow-x: auto;
+  }
+
+  .article pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
+
+  .article hr {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--color-hairline),
+      transparent
+    );
+    margin-block: 2.5em;
+  }
+
+  .article img {
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-soft);
+  }
+
+  /* Anchor links injected by rehype-autolink-headings */
+  .article .heading-anchor {
+    opacity: 0;
+    margin-left: 0.45rem;
+    color: var(--color-brand-400);
+    text-decoration: none;
+    font-weight: 400;
+    transition: opacity 0.18s;
+  }
+
+  .article :is(h2, h3, h4):hover .heading-anchor,
+  .article .heading-anchor:focus-visible {
+    opacity: 1;
+  }
+}
+
+/* Custom scrollbar — desktop only, subtle. */
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-ink-100);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-300);
+    border-radius: 9999px;
+    border: 2px solid var(--color-ink-100);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-brand-700);
+  }
+}

@@ -1,0 +1,172 @@
+'use client'
+
+import * as React from 'react'
+import { useRouter } from 'next/navigation'
+import { useForm, type DefaultValues, type FieldValues, type Path } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import type { ZodType } from 'zod'
+
+import {
+  CheckboxField,
+  FormSection,
+  SaveButton,
+  SelectField,
+  TextField,
+  TextareaField,
+} from '@/components/admin/form-fields'
+import { Button } from '@/components/ui/button'
+import { toast } from '@/components/ui/toaster'
+import type { ActionResult } from '@/lib/admin/guard'
+
+/**
+ * A declarative form for the flat CRUD resources (testimonials, FAQs, gallery
+ * items, authors). Each screen supplies a field list; the wiring — resolver,
+ * error display, toast, redirect — is identical to `CourseForm`, just not
+ * hand-written four more times.
+ */
+export type SimpleField<T extends FieldValues> = {
+  name: Path<T>
+  label: string
+  type?: 'text' | 'textarea' | 'number' | 'select' | 'checkbox' | 'email' | 'url' | 'date'
+  required?: boolean
+  hint?: string
+  placeholder?: string
+  rows?: number
+  options?: { value: string; label: string }[]
+  /** Column span inside the two-column grid. */
+  full?: boolean
+  min?: number
+  max?: number
+  step?: string
+}
+
+export function SimpleForm<T extends FieldValues>({
+  schema,
+  defaultValues,
+  fields,
+  sectionTitle,
+  sectionDescription,
+  onSubmitAction,
+  cancelHref,
+  submitLabel,
+  successMessage,
+}: {
+  schema: ZodType<T>
+  defaultValues: DefaultValues<T>
+  fields: SimpleField<T>[]
+  sectionTitle: string
+  sectionDescription?: string
+  onSubmitAction: (values: T) => Promise<ActionResult>
+  cancelHref: string
+  submitLabel: string
+  successMessage: string
+}) {
+  const router = useRouter()
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<T>({
+    resolver: zodResolver(schema),
+    mode: 'onBlur',
+    defaultValues,
+  })
+
+  const onSubmit = handleSubmit(async (values) => {
+    const result = await onSubmitAction(values as T)
+
+    if (!result.ok) {
+      toast.error('Could not save', { description: result.error })
+      return
+    }
+
+    toast.success(successMessage, {
+      description: 'The public pages will regenerate on their next request.',
+    })
+    router.push(cancelHref)
+    router.refresh()
+  })
+
+  return (
+    <form onSubmit={onSubmit} noValidate className="grid max-w-3xl gap-6 pb-24">
+      <FormSection title={sectionTitle} description={sectionDescription}>
+        <div className="grid gap-5 sm:grid-cols-2">
+          {fields.map((field) => {
+            const error = (errors as Record<string, { message?: string } | undefined>)[field.name]
+              ?.message
+            const span = field.full || field.type === 'textarea' ? 'sm:col-span-2' : undefined
+
+            if (field.type === 'textarea') {
+              return (
+                <TextareaField
+                  key={String(field.name)}
+                  label={field.label}
+                  required={field.required}
+                  hint={field.hint}
+                  placeholder={field.placeholder}
+                  rows={field.rows ?? 4}
+                  className={span}
+                  error={error}
+                  {...register(field.name)}
+                />
+              )
+            }
+
+            if (field.type === 'select') {
+              return (
+                <SelectField
+                  key={String(field.name)}
+                  label={field.label}
+                  required={field.required}
+                  hint={field.hint}
+                  options={field.options ?? []}
+                  className={span}
+                  error={error}
+                  {...register(field.name)}
+                />
+              )
+            }
+
+            if (field.type === 'checkbox') {
+              return (
+                <CheckboxField
+                  key={String(field.name)}
+                  label={field.label}
+                  hint={field.hint}
+                  className={span}
+                  error={error}
+                  {...register(field.name)}
+                />
+              )
+            }
+
+            return (
+              <TextField
+                key={String(field.name)}
+                label={field.label}
+                required={field.required}
+                hint={field.hint}
+                placeholder={field.placeholder}
+                type={field.type ?? 'text'}
+                min={field.min}
+                max={field.max}
+                step={field.step}
+                className={span}
+                error={error}
+                {...register(field.name)}
+              />
+            )
+          })}
+        </div>
+      </FormSection>
+
+      <div className="flex justify-end gap-3">
+        <Button type="button" variant="ghost" size="lg" onClick={() => router.push(cancelHref)}>
+          Cancel
+        </Button>
+        <SaveButton saving={isSubmitting}>{submitLabel}</SaveButton>
+      </div>
+    </form>
+  )
+}
