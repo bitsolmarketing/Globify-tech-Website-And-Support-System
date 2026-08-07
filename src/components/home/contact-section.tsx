@@ -1,4 +1,4 @@
-import { Clock, Mail, MapPin, MessageCircle, Phone } from 'lucide-react'
+import { Clock, Mail, MapPin, MessageCircle, MessagesSquare, Phone } from 'lucide-react'
 
 import { ContactForm } from '@/components/forms/contact-form'
 import { GoogleMap } from '@/components/home/google-map'
@@ -37,7 +37,7 @@ export async function ContactSection() {
               <ul className="mt-6 grid gap-5">
                 <li>
                   <a
-                    href={contactInfo.mapDirectionsUrl}
+                    href={contactInfo.officeUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="group flex items-start gap-4"
@@ -46,7 +46,9 @@ export async function ContactSection() {
                       <MapPin aria-hidden className="size-5" />
                     </span>
                     <span>
-                      <span className="block font-sans text-sm font-bold text-ink-900">Campus</span>
+                      <span className="block font-sans text-sm font-bold text-ink-900">
+                        Our office
+                      </span>
                       <span className="block text-[0.9375rem] text-ink-500">
                         {contactInfo.address.street}, {contactInfo.address.locality},{' '}
                         {contactInfo.address.region} {contactInfo.address.postalCode}
@@ -61,9 +63,30 @@ export async function ContactSection() {
                       <Phone aria-hidden className="size-5" />
                     </span>
                     <span>
-                      <span className="block font-sans text-sm font-bold text-ink-900">Phone</span>
+                      <span className="block font-sans text-sm font-bold text-ink-900">
+                        Admission counsellor
+                      </span>
                       <span className="block text-[0.9375rem] text-ink-500">
-                        {contactInfo.phone} · {contactInfo.landline}
+                        {contactInfo.phone}
+                      </span>
+                    </span>
+                  </a>
+                </li>
+
+                <li>
+                  <a
+                    href={`tel:${contactInfo.coursesPhoneHref}`}
+                    className="group flex items-start gap-4"
+                  >
+                    <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-800 transition-colors group-hover:bg-brand-900 group-hover:text-white">
+                      <MessagesSquare aria-hidden className="size-5" />
+                    </span>
+                    <span>
+                      <span className="block font-sans text-sm font-bold text-ink-900">
+                        Course Q&amp;A session
+                      </span>
+                      <span className="block text-[0.9375rem] text-ink-500">
+                        {contactInfo.coursesPhone}
                       </span>
                     </span>
                   </a>
@@ -95,10 +118,10 @@ export async function ContactSection() {
                     </span>
                     <span>
                       <span className="block font-sans text-sm font-bold text-ink-900">
-                        WhatsApp
+                        WhatsApp chat bot
                       </span>
                       <span className="block text-[0.9375rem] text-ink-500">
-                        Fastest reply — usually within minutes
+                        {contactInfo.whatsappDisplay} — instant answers, any time
                       </span>
                     </span>
                   </a>

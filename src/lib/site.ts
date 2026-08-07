@@ -34,10 +34,19 @@ export const siteConfig = {
 } as const
 
 export const contactInfo = {
-  phone: '+92 300 1234567',
-  phoneHref: '+923001234567',
-  whatsapp: '923001234567',
-  landline: '+92 41 8555000',
+  /**
+   * Three published lines, one job each. `phone` / `phoneHref` is the admission
+   * counsellor — it backs every plain `tel:` link on the site (navbar, footer,
+   * sticky CTA, error pages), so keep it as the primary.
+   */
+  phone: '+92 339 1110171',
+  phoneHref: '+923391110171',
+  /** WhatsApp chat bot — replies instantly, any hour. */
+  whatsapp: '923391110172',
+  whatsappDisplay: '+92 339 1110172',
+  /** Course Q&A line — syllabus, batches and fee questions in depth. */
+  coursesPhone: '+92 342 1405876',
+  coursesPhoneHref: '+923421405876',
   email: 'info@globifytech.com',
   admissionsEmail: 'admissions@globifytech.com',
   address: {
@@ -51,9 +60,9 @@ export const contactInfo = {
   geo: { latitude: 31.4181, longitude: 73.0776 },
   /** Keyless embed — no API key required, no third-party cookies before consent. */
   mapEmbedUrl:
-    'https://www.google.com/maps?q=Kohinoor%20Plaza%20Jaranwala%20Road%20Faisalabad&output=embed',
-  mapDirectionsUrl:
-    'https://www.google.com/maps/dir/?api=1&destination=Kohinoor+Plaza+Jaranwala+Road+Faisalabad',
+    'https://www.google.com/maps?q=Globify%20Tech%20Institute%20Faisalabad&output=embed',
+  /** Google Business Profile for the office — every "find us" link points here. */
+  officeUrl: 'https://share.google/qb390htfM45m7VzNM',
   openingHours: [
     { days: 'Monday – Saturday', time: '9:00 AM – 9:00 PM' },
     { days: 'Sunday', time: 'Closed' },
@@ -65,6 +74,35 @@ export const contactInfo = {
     closes: '21:00',
   },
 } as const
+
+/**
+ * The published lines with what each one is actually for, ordered fastest
+ * first. Contact surfaces render this list so a visitor picks the right number
+ * instead of guessing.
+ */
+export const contactLines = [
+  {
+    label: 'WhatsApp chat bot',
+    purpose: 'Instant answers, any time of day',
+    number: contactInfo.whatsappDisplay,
+    href: `https://wa.me/${contactInfo.whatsapp}`,
+    external: true,
+  },
+  {
+    label: 'Admission counsellor',
+    purpose: 'Call to enrol, confirm a batch or discuss fees',
+    number: contactInfo.phone,
+    href: `tel:${contactInfo.phoneHref}`,
+    external: false,
+  },
+  {
+    label: 'Course Q&A session',
+    purpose: 'Detailed questions about any course',
+    number: contactInfo.coursesPhone,
+    href: `tel:${contactInfo.coursesPhoneHref}`,
+    external: false,
+  },
+] as const
 
 export const socialLinks = [
   { name: 'Facebook', href: 'https://facebook.com/globifytech', icon: 'facebook' },
@@ -165,36 +203,24 @@ export const mainNav: NavItem[] = [
         {
           heading: 'AI & Development',
           links: [
-            { label: 'AI & Automation', href: '/courses/ai-and-automation', description: 'Build with LLMs, agents & no-code AI' },
-            { label: 'Web Development', href: '/courses/web-development', description: 'React, Next.js & full-stack MERN' },
-            { label: 'Python Programming', href: '/courses/python-programming', description: 'From basics to data & automation' },
-            { label: 'WordPress Development', href: '/courses/wordpress-development', description: 'Business sites & WooCommerce' },
+            { label: 'Full Stack Development with AI', href: '/courses/full-stack-development-with-ai', description: 'React, Next.js, Node & AI pair programming' },
           ],
         },
         {
           heading: 'Marketing & Business',
           links: [
-            { label: 'Digital Marketing', href: '/courses/digital-marketing', description: 'SEO, Meta Ads, Google Ads & funnels' },
-            { label: 'Amazon Virtual Assistant', href: '/courses/amazon-virtual-assistant', description: 'PL, wholesale & account handling' },
-            { label: 'Shopify Dropshipping', href: '/courses/shopify-dropshipping', description: 'Store build, ads & fulfilment' },
-            { label: 'TikTok Shop Mastery', href: '/courses/tiktok-shop', description: 'Affiliate, live selling & creator ops' },
+            { label: 'Digital Media Marketing with AI', href: '/courses/digital-media-marketing-with-ai', description: 'SEO, Meta Ads, Google Ads & funnels' },
+            { label: 'Social Media Marketing with AI', href: '/courses/social-media-marketing-with-ai', description: 'Organic growth, paid social & short-form' },
+            { label: 'TikTok Shop', href: '/courses/tiktok-shop', description: 'Affiliate, live selling & creator ops' },
+            { label: 'Facebook Automation & Monetization', href: '/courses/facebook-automation-and-monetization', description: 'Page growth, chatbots & payouts' },
           ],
         },
         {
           heading: 'Design & Media',
           links: [
             { label: 'Graphic Designing', href: '/courses/graphic-designing', description: 'Photoshop, Illustrator & branding' },
-            { label: 'UI/UX Design', href: '/courses/ui-ux-design', description: 'Figma, design systems & prototyping' },
-            { label: 'Video Editing', href: '/courses/video-editing', description: 'Premiere Pro, After Effects & reels' },
-            { label: 'Canva Mastery', href: '/courses/canva-mastery', description: 'Fast content design for business' },
-          ],
-        },
-        {
-          heading: 'Career Tracks',
-          links: [
-            { label: 'Freelancing Mastery', href: '/courses/freelancing-mastery', description: 'Fiverr, Upwork & client acquisition' },
-            { label: 'Office Automation', href: '/courses/office-automation', description: 'Excel, Word, PowerPoint & AI tools' },
-            { label: 'View all 14 courses', href: '/courses' },
+            { label: 'Video Editing: Beginner to Pro', href: '/courses/video-editing', description: 'Premiere Pro, After Effects & reels' },
+            { label: 'View all courses', href: '/courses' },
           ],
         },
       ],
@@ -223,12 +249,12 @@ export const footerNav = {
     { label: 'Contact Us', href: '/contact' },
   ],
   courses: [
-    { label: 'AI & Automation', href: '/courses/ai-and-automation' },
-    { label: 'Digital Marketing', href: '/courses/digital-marketing' },
-    { label: 'Web Development', href: '/courses/web-development' },
+    { label: 'Digital Media Marketing with AI', href: '/courses/digital-media-marketing-with-ai' },
+    { label: 'Full Stack Development with AI', href: '/courses/full-stack-development-with-ai' },
+    { label: 'Social Media Marketing with AI', href: '/courses/social-media-marketing-with-ai' },
     { label: 'Graphic Designing', href: '/courses/graphic-designing' },
     { label: 'Video Editing', href: '/courses/video-editing' },
-    { label: 'Freelancing Mastery', href: '/courses/freelancing-mastery' },
+    { label: 'TikTok Shop', href: '/courses/tiktok-shop' },
     { label: 'All Courses', href: '/courses' },
   ],
   resources: [

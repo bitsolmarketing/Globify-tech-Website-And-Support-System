@@ -25,7 +25,35 @@ const nextConfig = {
 
   // 301 redirects. Add legacy URLs here as the site evolves.
   async redirects() {
+    /* The catalogue was consolidated from 14 courses to 7. These keep the
+       retired URLs alive for inbound links and for the blog articles that
+       still reference them. Where no close equivalent exists the redirect
+       goes to the catalogue rather than to a misleading match. */
+    const retiredCourses = [
+      ['ai-and-automation', 'full-stack-development-with-ai'],
+      ['web-development', 'full-stack-development-with-ai'],
+      ['python-programming', 'full-stack-development-with-ai'],
+      ['wordpress-development', 'full-stack-development-with-ai'],
+      ['digital-marketing', 'digital-media-marketing-with-ai'],
+      ['ui-ux-design', 'graphic-designing'],
+      ['canva-mastery', 'graphic-designing'],
+      ['amazon-virtual-assistant', 'tiktok-shop'],
+      ['shopify-dropshipping', 'tiktok-shop'],
+    ].map(([from, to]) => ({
+      source: `/courses/${from}`,
+      destination: `/courses/${to}`,
+      permanent: true,
+    }))
+
+    const retiredToCatalogue = ['freelancing-mastery', 'office-automation'].map((from) => ({
+      source: `/courses/${from}`,
+      destination: '/courses',
+      permanent: true,
+    }))
+
     return [
+      ...retiredCourses,
+      ...retiredToCatalogue,
       { source: '/home', destination: '/', permanent: true },
       { source: '/courses/index', destination: '/courses', permanent: true },
       { source: '/blogs', destination: '/blog', permanent: true },

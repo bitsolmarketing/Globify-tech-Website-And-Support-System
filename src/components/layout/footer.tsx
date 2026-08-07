@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Clock, Mail, MapPin, Phone } from 'lucide-react'
+import { Clock, Mail, MapPin, MessageCircle, Phone } from 'lucide-react'
 
 import { Logo } from '@/components/layout/logo'
 import { SocialLinks } from '@/components/layout/social-links'
@@ -7,7 +7,7 @@ import { NewsletterForm } from '@/components/blog/newsletter-form'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { Campaign } from '@/lib/data/campaign'
-import { contactInfo, footerNav, siteConfig } from '@/lib/site'
+import { contactInfo, contactLines, footerNav, siteConfig } from '@/lib/site'
 import { formatDayMonthLong } from '@/lib/utils'
 
 const columns = [
@@ -78,7 +78,7 @@ export function Footer({ campaign }: { campaign: Campaign }) {
 
             <address className="mt-6 flex flex-col gap-3 not-italic">
               <a
-                href={contactInfo.mapDirectionsUrl}
+                href={contactInfo.officeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group flex items-start gap-3 text-[0.9375rem] transition-colors hover:text-white"
@@ -92,13 +92,25 @@ export function Footer({ campaign }: { campaign: Campaign }) {
                 </span>
               </a>
 
-              <a
-                href={`tel:${contactInfo.phoneHref}`}
-                className="flex items-center gap-3 text-[0.9375rem] transition-colors hover:text-white"
-              >
-                <Phone aria-hidden className="size-4 shrink-0 text-gold-400" />
-                {contactInfo.phone}
-              </a>
+              {contactLines.map((line) => (
+                <a
+                  key={line.number}
+                  href={line.href}
+                  target={line.external ? '_blank' : undefined}
+                  rel={line.external ? 'noopener noreferrer' : undefined}
+                  className="flex items-start gap-3 text-[0.9375rem] transition-colors hover:text-white"
+                >
+                  {line.external ? (
+                    <MessageCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-gold-400" />
+                  ) : (
+                    <Phone aria-hidden className="mt-0.5 size-4 shrink-0 text-gold-400" />
+                  )}
+                  <span>
+                    {line.number}
+                    <span className="block text-[0.8125rem] text-white/50">{line.label}</span>
+                  </span>
+                </a>
+              ))}
 
               <a
                 href={`mailto:${contactInfo.email}`}

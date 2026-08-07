@@ -126,7 +126,16 @@ export default async function CourseDetailPage({ params }: { params: Promise<Par
     { icon: Layers, label: 'Modules', value: `${course.curriculum.length} modules · ${totalTopics} topics` },
     { icon: Globe2, label: 'Mode', value: course.mode.join(' · ') },
     { icon: Languages, label: 'Language', value: course.language },
-    { icon: Users, label: 'Enrolled', value: `${course.enrolled.toLocaleString('en-US')} students` },
+    // Enrolment count is only shown once there is a real figure to show.
+    ...(course.enrolled > 0
+      ? [
+          {
+            icon: Users,
+            label: 'Enrolled',
+            value: `${course.enrolled.toLocaleString('en-US')} students`,
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -143,11 +152,13 @@ export default async function CourseDetailPage({ params }: { params: Promise<Par
               <Badge variant="solid-gold" size="md">
                 {campaign.discountPercent}% OFF
               </Badge>
-              <div className="flex items-center gap-1.5">
-                <Star aria-hidden className="size-4 fill-gold-400 text-gold-400" />
-                <span className="font-sans text-sm font-bold">{course.rating}</span>
-                <span className="font-sans text-xs text-white/50">({course.reviews})</span>
-              </div>
+              {course.reviews > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <Star aria-hidden className="size-4 fill-gold-400 text-gold-400" />
+                  <span className="font-sans text-sm font-bold">{course.rating}</span>
+                  <span className="font-sans text-xs text-white/50">({course.reviews})</span>
+                </div>
+              )}
             </div>
 
             <div className="mt-5 flex items-end gap-3">

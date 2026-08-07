@@ -55,7 +55,7 @@ export default async function GalleryPage() {
         crumbs={CRUMBS}
       >
         <Button asChild variant="outline-light" size="lg">
-          <a href={contactInfo.mapDirectionsUrl} target="_blank" rel="noopener noreferrer">
+          <a href={contactInfo.officeUrl} target="_blank" rel="noopener noreferrer">
             <MapPin aria-hidden />
             Get directions
           </a>

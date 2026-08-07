@@ -264,20 +264,13 @@ function logoArt(size = 512) {
 /* ------------------------------------------------------------------ Runner */
 
 const COURSE_SLUGS = [
-  'ai-and-automation',
-  'web-development',
-  'python-programming',
-  'wordpress-development',
-  'digital-marketing',
-  'amazon-virtual-assistant',
-  'shopify-dropshipping',
+  'full-stack-development-with-ai',
+  'digital-media-marketing-with-ai',
+  'social-media-marketing-with-ai',
   'tiktok-shop',
+  'facebook-automation-and-monetization',
   'graphic-designing',
-  'ui-ux-design',
   'video-editing',
-  'canva-mastery',
-  'freelancing-mastery',
-  'office-automation',
 ]
 
 const BLOG_SLUGS = [

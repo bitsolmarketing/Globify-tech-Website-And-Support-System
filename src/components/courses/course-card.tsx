@@ -57,12 +57,14 @@ export function CourseCard({ course, discountPercent, priority = false, classNam
           )}
         </div>
 
-        {/* Rating */}
-        <div className="absolute top-3 right-3 flex items-center gap-1 rounded-full bg-white/92 px-2.5 py-1 shadow-soft backdrop-blur-sm">
-          <Star aria-hidden className="size-3.5 fill-gold-500 text-gold-500" />
-          <span className="font-sans text-xs font-bold text-ink-900">{course.rating}</span>
-          <span className="font-sans text-[0.6875rem] text-ink-400">({course.reviews})</span>
-        </div>
+        {/* Rating — hidden until the course has real reviews. */}
+        {course.reviews > 0 && (
+          <div className="absolute top-3 right-3 flex items-center gap-1 rounded-full bg-white/92 px-2.5 py-1 shadow-soft backdrop-blur-sm">
+            <Star aria-hidden className="size-3.5 fill-gold-500 text-gold-500" />
+            <span className="font-sans text-xs font-bold text-ink-900">{course.rating}</span>
+            <span className="font-sans text-[0.6875rem] text-ink-400">({course.reviews})</span>
+          </div>
+        )}
 
         <p className="absolute bottom-3 left-3 font-sans text-[0.6875rem] font-bold tracking-wide text-white/85 uppercase">
           {course.category}
@@ -89,10 +91,12 @@ export function CourseCard({ course, discountPercent, priority = false, classNam
             <Signal aria-hidden className="size-3.5 text-brand-600" />
             {course.level}
           </li>
-          <li className="flex items-center gap-1.5">
-            <Users aria-hidden className="size-3.5 text-brand-600" />
-            {course.enrolled.toLocaleString('en-US')}
-          </li>
+          {course.enrolled > 0 && (
+            <li className="flex items-center gap-1.5">
+              <Users aria-hidden className="size-3.5 text-brand-600" />
+              {course.enrolled.toLocaleString('en-US')}
+            </li>
+          )}
         </ul>
 
         {/* Skills */}

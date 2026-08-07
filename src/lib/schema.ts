@@ -66,8 +66,19 @@ export function organizationSchema(): Json {
       },
       {
         '@type': 'ContactPoint',
-        telephone: contactInfo.phone,
+        telephone: contactInfo.coursesPhone,
+        contactType: 'sales',
+        name: 'Course Q&A session',
+        email: contactInfo.email,
+        areaServed: 'PK',
+        availableLanguage: ['English', 'Urdu'],
+      },
+      {
+        '@type': 'ContactPoint',
+        telephone: contactInfo.whatsappDisplay,
         contactType: 'customer support',
+        name: 'WhatsApp chat bot',
+        url: `https://wa.me/${contactInfo.whatsapp}`,
         email: contactInfo.email,
         areaServed: 'PK',
         availableLanguage: ['English', 'Urdu'],
@@ -96,7 +107,7 @@ export function localBusinessSchema(): Json {
       latitude: contactInfo.geo.latitude,
       longitude: contactInfo.geo.longitude,
     },
-    hasMap: contactInfo.mapDirectionsUrl,
+    hasMap: contactInfo.officeUrl,
     openingHoursSpecification: [
       {
         '@type': 'OpeningHoursSpecification',
@@ -210,13 +221,20 @@ export function courseSchema(course: Course, campaign: { discountPercent: number
           ? { '@type': 'Place', name: siteConfig.name, address: postalAddress }
           : { '@type': 'VirtualLocation', url: absoluteUrl(`/courses/${course.slug}`) },
     })),
-    aggregateRating: {
-      '@type': 'AggregateRating',
-      ratingValue: course.rating,
-      reviewCount: course.reviews,
-      bestRating: 5,
-      worstRating: 1,
-    },
+    /* Omitted entirely until real reviews exist. Emitting a zero-count
+       AggregateRating is invalid, and emitting an invented one is a
+       structured-data violation Google penalises. */
+    ...(course.reviews > 0
+      ? {
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: course.rating,
+            reviewCount: course.reviews,
+            bestRating: 5,
+            worstRating: 1,
+          },
+        }
+      : {}),
     timeRequired: `P${course.durationWeeks}W`,
     occupationalCategory: course.careers.map((c) => c.role),
   }

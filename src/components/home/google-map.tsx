@@ -74,7 +74,7 @@ export function GoogleMap({ className }: { className?: string }) {
       {/* Always-available fallback for keyboard, screen-reader and no-JS users. */}
       <div className="absolute right-3 bottom-3 z-10">
         <Button asChild variant="secondary" size="sm">
-          <a href={contactInfo.mapDirectionsUrl} target="_blank" rel="noopener noreferrer">
+          <a href={contactInfo.officeUrl} target="_blank" rel="noopener noreferrer">
             Get directions
             <ExternalLink aria-hidden />
           </a>

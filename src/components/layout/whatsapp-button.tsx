@@ -46,7 +46,8 @@ export function WhatsAppButton({ campaign }: { campaign: Campaign }) {
             Questions about the {campaign.discountPercent}% OFF offer?
           </p>
           <p className="mt-1 font-sans text-xs leading-snug text-ink-500">
-            Chat with our admissions team on WhatsApp — usually replies within minutes.
+            Our WhatsApp chat bot answers instantly, and hands you to a counsellor when you need
+            one.
           </p>
         </div>
       )}

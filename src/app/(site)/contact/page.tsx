@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Clock, Mail, MapPin, MessageCircle, Phone } from 'lucide-react'
+import { Clock, Mail, MapPin, MessageCircle, MessagesSquare, Phone } from 'lucide-react'
 
 import { ContactForm } from '@/components/forms/contact-form'
 import { GoogleMap } from '@/components/home/google-map'
@@ -49,18 +49,26 @@ const CRUMBS = [{ name: 'Contact', href: '/contact' }]
 const buildChannels = (whatsappHref: string) => [
   {
     icon: MessageCircle,
-    title: 'WhatsApp',
-    detail: 'Fastest — usually replies within minutes',
+    title: 'WhatsApp chat bot',
+    detail: `${contactInfo.whatsappDisplay} — instant answers, any time of day`,
     action: 'Start a chat',
     href: whatsappHref,
     external: true,
   },
   {
     icon: Phone,
-    title: 'Phone',
-    detail: `${contactInfo.phone} · ${contactInfo.landline}`,
+    title: 'Admission counsellor',
+    detail: `${contactInfo.phone} — enrol, confirm a batch or discuss fees`,
     action: 'Call admissions',
     href: `tel:${contactInfo.phoneHref}`,
+    external: false,
+  },
+  {
+    icon: MessagesSquare,
+    title: 'Course Q&A session',
+    detail: `${contactInfo.coursesPhone} — detailed questions about any course`,
+    action: 'Book a Q&A call',
+    href: `tel:${contactInfo.coursesPhoneHref}`,
     external: false,
   },
   {
@@ -73,10 +81,10 @@ const buildChannels = (whatsappHref: string) => [
   },
   {
     icon: MapPin,
-    title: 'Visit the campus',
+    title: 'Visit our office',
     detail: `${contactInfo.address.street}, ${contactInfo.address.locality}`,
-    action: 'Get directions',
-    href: contactInfo.mapDirectionsUrl,
+    action: 'Open our office on Google',
+    href: contactInfo.officeUrl,
     external: true,
   },
 ]
@@ -154,7 +162,7 @@ export default async function ContactPage() {
             Ways to contact us
           </h2>
 
-          <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {CHANNELS.map((channel) => {
               const Icon = channel.icon
               return (
@@ -219,7 +227,7 @@ export default async function ContactPage() {
               </p>
               <Button asChild variant="secondary" size="md" className="mt-5">
                 <a
-                  href={contactInfo.mapDirectionsUrl}
+                  href={contactInfo.officeUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
