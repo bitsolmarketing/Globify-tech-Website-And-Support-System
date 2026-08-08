@@ -95,6 +95,51 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
+      # `ssh: connect to host *** port ***: Connection timed out` is the least
+      # informative way this can fail: the values are masked, so the log cannot
+      # say whether the secrets are wrong or the server refused the runner. This
+      # step reaches the same conclusion the masking prevents, by probing two
+      # reference endpoints alongside the configured one and reporting only
+      # reachable/unreachable — never the values themselves.
+      - name: Check the server is reachable
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+        run: |
+          probe() { timeout 12 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; }
+
+          if probe "$SSH_HOST" "$SSH_PORT"; then
+            echo "Configured SSH endpoint is reachable."
+            exit 0
+          fi
+
+          echo "Configured SSH endpoint did NOT accept a TCP connection."
+          echo "Classifying the failure against two reference endpoints:"
+
+          # github.com:22 establishes whether this runner can open outbound SSH
+          # at all. 147.93.93.190:65002 is globifytech.com's server — the address
+          # ftp.globifytech.com resolves to, publicly in DNS, verified answering
+          # with an OpenSSH 9.9 banner. Between them the cause is unambiguous.
+          probe github.com 22 && outbound=yes || outbound=no
+          probe 147.93.93.190 65002 && server=yes || server=no
+          echo "  outbound SSH from this runner : $outbound"
+          echo "  globifytech.com server        : $server"
+
+          if [ "$outbound" = no ]; then
+            echo "::error::This runner cannot open outbound SSH at all — a GitHub incident, not your configuration."
+          elif [ "$server" = yes ]; then
+            echo "::error::The server is reachable from this runner, but SSH_HOST/SSH_PORT are not. \
+          One of those two secrets is wrong. SSH_HOST must be 147.93.93.190 (the origin), \
+          NOT 145.79.29.41 or 145.79.24.8 — those are Hostinger CDN addresses that run no SSH. \
+          SSH_PORT must be 65002; port 22 is filtered on this host and times out exactly like this."
+          else
+            echo "::error::The server refuses connections from GitHub's runners specifically — it \
+          answers from other networks but drops this one. Hostinger is filtering the runner IP range. \
+          Ask Hostinger support to allow it, or switch to the pull-based deploy (a cron on the server \
+          that polls origin/main), which needs no inbound access."
+          fi
+          exit 1
+
       - name: Deploy
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -106,6 +151,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" \
               -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=20 \
               "$SSH_USER@$SSH_HOST" \
               "cd '$DEPLOY_PATH' \
                && DEPLOY_BRANCH=main \
