@@ -376,10 +376,28 @@ AUTH_URL                                # optional; only when the origin is not 
 ## Deploying
 
 Production is **Hostinger shared hosting** (`platform: hostinger`, Node.js app
-behind Passenger, Hostinger's `hcdn` CDN in front). A push to `main` triggers
-[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), which typechecks
-and lints on the runner, then runs [`scripts/deploy.sh`](scripts/deploy.sh) over
-SSH on the server: fetch, `npm ci`, `npm run build`, restart, smoke-test.
+behind Passenger, Hostinger's `hcdn` CDN in front).
+
+Deployment is **pull-based**. [`scripts/auto-deploy.sh`](scripts/auto-deploy.sh)
+runs from cron on the server every five minutes, and when `origin/main` moves it
+runs [`scripts/deploy.sh`](scripts/deploy.sh): fetch, `npm ci`, `npm run build`,
+restart, smoke-test. Push to `main` and the site follows within five minutes.
+
+It works this way because the push-based alternative cannot reach this server.
+Hostinger's firewall drops connections from GitHub-hosted runners — the failure
+is a TCP timeout, before authentication — and the documented remedy,
+allowlisting GitHub Actions, means 7,297 CIDR ranges that rotate. Inverting the
+direction removes the constraint instead of negotiating with it: the server
+opens the connection, so there is nothing inbound to permit and no fixed-IP
+runner to rent.
+
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) still runs on
+every push, typechecking and linting. That matters more under pull-based deploys
+than under push-based ones: cron deploys whatever is on `main` without asking,
+so CI is the only thing standing between a broken commit and production. The
+SSH deploy job in that workflow is retained but switched off; set the repository
+variable `DEPLOY_MODE=ssh` to re-enable it if the site ever moves to a host that
+accepts CI connections.
 
 ### Why the build runs on the server and not in CI
 
@@ -402,17 +420,24 @@ where the data is removes the failure mode rather than documenting around it.
    It is git-ignored, so it lives only on the server. Substitute every
    placeholder — a templated `DB_HOST`-style value is rejected at startup by
    `describeDatabaseUrl()` precisely because it otherwise reads as "configured".
-3. **Add a deploy key**: `ssh-keygen -t ed25519 -C deploy -f deploy_key`, append
-   the public half to the server's `~/.ssh/authorized_keys`.
-4. **Add the repository secrets** under Settings › Secrets and variables ›
-   Actions — `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`
-   (`ssh-keyscan <host>`), `DEPLOY_PATH`, and optionally `SSH_PORT` / `SMOKE_URL`.
-5. **Seed the database once**: `npm run db:migrate && npm run db:seed`.
+3. **Seed the database once**: `npm run db:migrate && npm run db:seed`.
+4. **Add the cron job** — hPanel › Advanced › Cron Jobs, every 5 minutes:
+   ```
+   */5 * * * * /home/USER/domains/globifytech.com/app/scripts/auto-deploy.sh
+   ```
+   It prints nothing when `main` has not moved, so cron stays silent until a
+   deploy actually happens or fails. History goes to `../.globify-deploy/deploy.log`
+   — deliberately outside the checkout, since a log file written inside it would
+   trip `deploy.sh`'s own dirty-tree guard on the next poll.
+5. **Check `npm` is on cron's PATH.** Cron runs with a near-empty environment and
+   frequently cannot see the node that hPanel installed. Run `dirname $(command -v npm)`
+   in an interactive shell; if the first deploy logs `npm is not on PATH under
+   cron`, set `DEPLOY_NODE_PATH` to that directory at the top of the cron entry.
 
 Deploying by hand is the same script:
 
 ```bash
-ssh user@host 'cd /path/to/app && ./scripts/deploy.sh'
+ssh -p 65002 user@host 'cd ~/domains/globifytech.com/app && ./scripts/deploy.sh'
 ```
 
 It refuses to run if the checkout has uncommitted changes, rolls back to the

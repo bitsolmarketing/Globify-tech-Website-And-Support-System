@@ -1,13 +1,20 @@
-# Deploys main to the Hostinger box that serves globifytech.com.
+# Verifies main, and — where the network allows it — deploys.
 #
-# The build deliberately does not happen here. `next build` pre-renders ~80
+# Deployment for globifytech.com is currently PULL-based: scripts/auto-deploy.sh
+# runs from cron on the server, polls origin/main, and deploys when it moves.
+# Hostinger's firewall drops GitHub-hosted runners, so the push-based job below
+# stays switched off (see DEPLOY_MODE). What this workflow guarantees on every
+# push is that main typechecks and lints — the server deploys whatever is on
+# main, so a broken commit would otherwise be found by the cron, in production.
+#
+# The build never happens on the runner either way. `next build` pre-renders ~80
 # pages by reading the database, which only accepts connections from the server
 # itself (hPanel > Databases > Remote MySQL). A runner would be refused, every
 # read would fall back, and the deploy would publish seed placeholders while
-# reporting success. So this workflow verifies the commit, then hands off to
-# scripts/deploy.sh over SSH, which builds where the data actually is.
+# reporting success. Building on the server is what keeps the pages real.
 #
-# Required repository secrets — Settings > Secrets and variables > Actions:
+# Secrets below are needed only when DEPLOY_MODE=ssh — Settings > Secrets and
+# variables > Actions:
 #
 #   SSH_HOST          hostname or IP of the server
 #   SSH_USER          SSH username (hPanel > Advanced > SSH Access)
@@ -60,9 +67,21 @@ jobs:
 
       - run: npm run lint
 
+  # Off unless the repository variable DEPLOY_MODE is set to "ssh".
+  #
+  # Hostinger's firewall drops GitHub-hosted runners, and allowlisting them means
+  # 7,297 CIDR ranges that rotate — so this path cannot currently reach the
+  # server, and leaving it enabled would mark every push red for a failure
+  # nobody can act on. Deployment happens the other way round instead:
+  # scripts/auto-deploy.sh polls origin/main from cron on the server.
+  #
+  # Everything here still works. If the firewall opens, or the site moves to a
+  # host that accepts CI connections, set DEPLOY_MODE=ssh under Settings >
+  # Secrets and variables > Actions > Variables and this resumes unchanged.
   deploy:
     name: Build and restart on the server
     needs: verify
+    if: vars.DEPLOY_MODE == 'ssh'
     runs-on: ubuntu-latest
     environment: production
     steps:
