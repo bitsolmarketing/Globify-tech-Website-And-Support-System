@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { LoginForm } from '@/components/admin/login-form'
 import { auth, signIn } from '@/auth'
-import { isDatabaseConfigured } from '@/db'
+import { isDatabaseConfigured, pingDatabase } from '@/db'
 
 export const metadata: Metadata = {
   title: 'Sign in',
@@ -57,6 +57,17 @@ export default async function AdminLoginPage() {
         error.digest.startsWith('NEXT_REDIRECT')
       ) {
         throw error
+      }
+
+      /* Auth.js collapses every `authorize` failure into the same opaque
+         CredentialsSignin, so a dead database and a typo arrive here looking
+         identical. Probing once, only on the failure path, is what separates
+         them — otherwise a broken DATABASE_URL presents for ever as "wrong
+         password" and sends you hunting for the wrong problem. */
+      const health = await pingDatabase()
+      if (!health.ok) {
+        console.error('[admin] sign-in blocked by database outage —', health.reason)
+        return { error: `Sign-in is unavailable: ${health.reason}.` }
       }
 
       return { error: 'Those details did not match an admin account.' }

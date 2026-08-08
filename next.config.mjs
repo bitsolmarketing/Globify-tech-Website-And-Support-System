@@ -1,3 +1,19 @@
+/*
+ * Canonical host. Every URL the site emits — canonical tags, sitemap entries,
+ * JSON-LD @ids, RSS links — is built from NEXT_PUBLIC_SITE_URL through
+ * `absoluteUrl()`, so the www/non-www redirect below derives its target from
+ * that same value and cannot drift out of agreement with them.
+ */
+const canonicalOrigin = new URL(
+  (process.env.NEXT_PUBLIC_SITE_URL || 'https://globifytech.com').replace(/\/$/, ''),
+).origin
+const canonicalHost = new URL(canonicalOrigin).host
+
+/** The twin of the canonical host: www.x when x is canonical, and vice versa. */
+const duplicateHost = canonicalHost.startsWith('www.')
+  ? canonicalHost.slice(4)
+  : `www.${canonicalHost}`
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -51,7 +67,20 @@ const nextConfig = {
       permanent: true,
     }))
 
+    /* Host consolidation: send the duplicate host to the canonical one so
+       Google merges the signals instead of splitting them across two hosts.
+       `has` matches the Host header exactly, so localhost, *.vercel.app
+       previews and the canonical host itself are all left untouched — only
+       the literal duplicate redirects, which rules out a loop. */
+    const canonicalHostRedirect = {
+      source: '/:path*',
+      has: [{ type: 'host', value: duplicateHost }],
+      destination: `${canonicalOrigin}/:path*`,
+      permanent: true,
+    }
+
     return [
+      canonicalHostRedirect,
       ...retiredCourses,
       ...retiredToCatalogue,
       { source: '/home', destination: '/', permanent: true },
