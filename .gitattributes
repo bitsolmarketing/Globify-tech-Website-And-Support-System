@@ -1,0 +1,21 @@
+# Normalise text in the repository, let each working copy use its own endings.
+* text=auto
+
+# Except anything Linux executes. `scripts/deploy.sh` is authored on Windows and
+# run by bash on the Hostinger box; a single CR surviving the trip makes the
+# shebang `#!/usr/bin/env bash\r`, and the deploy dies with a "bad interpreter"
+# error that names a binary nobody can find. Pin these to LF on checkout too,
+# not just in the index.
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Binary — never touch, never diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary

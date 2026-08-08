@@ -44,7 +44,14 @@ const nextConfig = {
     /* The catalogue was consolidated from 14 courses to 7. These keep the
        retired URLs alive for inbound links and for the blog articles that
        still reference them. Where no close equivalent exists the redirect
-       goes to the catalogue rather than to a misleading match. */
+       goes to the catalogue rather than to a misleading match.
+
+       The second group is a different lineage. globifytech.com has been serving
+       a build whose catalogue matches no commit in this repository, so the URLs
+       currently indexed by Google are not the ones above — they are these. The
+       first deploy of this repository retires all eight of them at once, and
+       without a redirect each becomes a 404 on a page that already has ranking
+       and inbound links. */
     const retiredCourses = [
       ['ai-and-automation', 'full-stack-development-with-ai'],
       ['web-development', 'full-stack-development-with-ai'],
@@ -55,13 +62,28 @@ const nextConfig = {
       ['canva-mastery', 'graphic-designing'],
       ['amazon-virtual-assistant', 'tiktok-shop'],
       ['shopify-dropshipping', 'tiktok-shop'],
+
+      // Live today, retired by the first deploy — near-identical renames.
+      ['digital-marketing-with-ai', 'digital-media-marketing-with-ai'],
+      ['full-stack-web-development-with-ai', 'full-stack-development-with-ai'],
+      ['tiktok-shop-mastery', 'tiktok-shop'],
     ].map(([from, to]) => ({
       source: `/courses/${from}`,
       destination: `/courses/${to}`,
       permanent: true,
     }))
 
-    const retiredToCatalogue = ['freelancing-mastery', 'office-automation'].map((from) => ({
+    /* No successor close enough to name. "Agentic AI" and "AI Chatbots &
+       Business Automation" have no counterpart in the seven, and pointing them
+       at Facebook Automation because both say "automation" would land visitors
+       on a course about something else — worse than the catalogue, which at
+       least lets them choose. */
+    const retiredToCatalogue = [
+      'freelancing-mastery',
+      'office-automation',
+      'agentic-ai-and-workflow-management',
+      'ai-chatbots-and-business-automation',
+    ].map((from) => ({
       source: `/courses/${from}`,
       destination: '/courses',
       permanent: true,

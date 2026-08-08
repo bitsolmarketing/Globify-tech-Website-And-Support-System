@@ -1,0 +1,129 @@
+# Deploys main to the Hostinger box that serves globifytech.com.
+#
+# The build deliberately does not happen here. `next build` pre-renders ~80
+# pages by reading the database, which only accepts connections from the server
+# itself (hPanel > Databases > Remote MySQL). A runner would be refused, every
+# read would fall back, and the deploy would publish seed placeholders while
+# reporting success. So this workflow verifies the commit, then hands off to
+# scripts/deploy.sh over SSH, which builds where the data actually is.
+#
+# Required repository secrets — Settings > Secrets and variables > Actions:
+#
+#   SSH_HOST          hostname or IP of the server
+#   SSH_USER          SSH username (hPanel > Advanced > SSH Access)
+#   SSH_PRIVATE_KEY   private half of a key whose public half is in the
+#                     server's ~/.ssh/authorized_keys. Generate a dedicated
+#                     one: ssh-keygen -t ed25519 -C deploy -f deploy_key
+#   SSH_KNOWN_HOSTS   output of: ssh-keyscan -p <port> <host>
+#                     Pinning this is what stops a spoofed host from being
+#                     handed the deploy key.
+#   DEPLOY_PATH       absolute path to the checkout on the server,
+#                     e.g. /home/u199249844/domains/globifytech.com/app
+#
+# Optional:
+#   SSH_PORT          defaults to 22
+#   SMOKE_URL         hit after restart; a non-200 fails the deploy
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Rebuild even if the server is already on this commit'
+        type: boolean
+        default: false
+
+# Deploys queue rather than race. `cancel-in-progress` stays false on purpose:
+# interrupting a run mid-`npm ci` leaves the server with a broken node_modules.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Typecheck and lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+  deploy:
+    name: Build and restart on the server
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check the deploy secrets are present
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          missing=
+          for name in SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS DEPLOY_PATH; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            echo "See the header of .github/workflows/deploy.yml for how to set them."
+            exit 1
+          fi
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          SMOKE_URL: ${{ secrets.SMOKE_URL }}
+          FORCE: ${{ inputs.force && '1' || '0' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" \
+              -o BatchMode=yes -o StrictHostKeyChecking=yes \
+              "$SSH_USER@$SSH_HOST" \
+              "cd '$DEPLOY_PATH' \
+               && DEPLOY_BRANCH=main \
+                  DEPLOY_FORCE='$FORCE' \
+                  DEPLOY_SMOKE_URL='$SMOKE_URL' \
+                  bash scripts/deploy.sh"
+
+      - name: Remind about the CDN
+        if: success()
+        run: |
+          {
+            echo "### Deployed to globifytech.com"
+            echo
+            echo "The server is running \`${GITHUB_SHA:0:7}\`."
+            echo
+            echo "**Purge the CDN before checking the site.** Hostinger's edge holds"
+            echo "pages for up to a year (\`s-maxage=31536000\`), so the old HTML will"
+            echo "keep being served until you clear it:"
+            echo
+            echo "hPanel → Websites → globifytech.com → Performance → **Purge Cache**"
+          } >> "$GITHUB_STEP_SUMMARY"

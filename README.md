@@ -373,23 +373,68 @@ AUTH_URL                                # optional; only when the origin is not 
 
 ---
 
-## Deploying to Vercel
+## Deploying
 
-1. Push the repository to GitHub.
-2. Import it in Vercel — the framework preset is detected automatically.
-3. Set `NEXT_PUBLIC_SITE_URL` to your production domain.
-4. For the admin, add `DATABASE_URL`, `AUTH_SECRET`, `ADMIN_EMAIL` and
-   `ADMIN_PASSWORD`, then run `npm run db:migrate && npm run db:seed` once
-   against the production database.
-5. Deploy.
+Production is **Hostinger shared hosting** (`platform: hostinger`, Node.js app
+behind Passenger, Hostinger's `hcdn` CDN in front). A push to `main` triggers
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml), which typechecks
+and lints on the runner, then runs [`scripts/deploy.sh`](scripts/deploy.sh) over
+SSH on the server: fetch, `npm ci`, `npm run build`, restart, smoke-test.
 
-No build configuration, no `vercel.json`, no post-install steps. `prebuild`
-regenerates the media, `next build` pre-renders all 80 public pages.
+### Why the build runs on the server and not in CI
 
-The build reads content from the database when `DATABASE_URL` is set, so the
-build machine needs network access to it — on Hostinger that means adding the
-build machine IP under hPanel > Databases > Remote MySQL. If it is unreachable the build still succeeds against the seed content
-rather than failing, and logs which reads fell back.
+`next build` pre-renders ~80 pages by reading the database, and that database
+only accepts connections from the server itself unless the connecting IP is
+added under hPanel › Databases › **Remote MySQL**. Build on a runner and every
+read is refused, every page silently falls back to the seed content checked into
+`src/lib/*.ts`, and the deploy goes green while publishing placeholders. Building
+where the data is removes the failure mode rather than documenting around it.
+
+### One-time setup
+
+1. **Clone on the server**, into the path the Node.js app serves:
+   ```bash
+   git clone https://github.com/bitsolmarketing/globify-tech-14-august.git app
+   cd app && npm ci
+   ```
+2. **Create `.env.production.local`** there with the real `DATABASE_URL` (host
+   `localhost`), `AUTH_SECRET`, `NEXT_PUBLIC_SITE_URL` and the admin variables.
+   It is git-ignored, so it lives only on the server. Substitute every
+   placeholder — a templated `DB_HOST`-style value is rejected at startup by
+   `describeDatabaseUrl()` precisely because it otherwise reads as "configured".
+3. **Add a deploy key**: `ssh-keygen -t ed25519 -C deploy -f deploy_key`, append
+   the public half to the server's `~/.ssh/authorized_keys`.
+4. **Add the repository secrets** under Settings › Secrets and variables ›
+   Actions — `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`, `SSH_KNOWN_HOSTS`
+   (`ssh-keyscan <host>`), `DEPLOY_PATH`, and optionally `SSH_PORT` / `SMOKE_URL`.
+5. **Seed the database once**: `npm run db:migrate && npm run db:seed`.
+
+Deploying by hand is the same script:
+
+```bash
+ssh user@host 'cd /path/to/app && ./scripts/deploy.sh'
+```
+
+It refuses to run if the checkout has uncommitted changes, rolls back to the
+previous commit if the build fails, and warns rather than proceeding quietly
+when `DATABASE_URL` is missing or still templated.
+
+### Purge the CDN afterwards
+
+Hostinger's edge serves pages with `Cache-Control: s-maxage=31536000` and has
+been observed holding HTML for over nine days. **A successful deploy will not
+change what visitors see until the cache is cleared**: hPanel › Websites ›
+globifytech.com › Performance › **Purge Cache**. Neither the workflow nor the
+script can reach that layer, so both end by saying so.
+
+### Note on the current production build
+
+`globifytech.com` is serving a build whose course catalogue matches no commit in
+this repository — eight courses with slugs (`tiktok-shop-mastery`,
+`agentic-ai-and-workflow-management`, …) that appear in neither the initial
+commit's fourteen nor the current seven. The first deploy of this repository
+therefore *replaces* that site rather than updating it. `next.config.mjs`
+carries 301s for all eight of those URLs so the indexed ones do not become 404s.
 
 **After the first deploy:** submit `/sitemap.xml` in Google Search Console, add
 your GA4 and Clarity IDs, and update the contact details in `src/lib/site.ts`.
