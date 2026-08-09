@@ -1,0 +1,6 @@
+{
+  "assistant": false,
+  "metaVerifyToken": false,
+  "metaAppSecret": false,
+  "database": true
+}

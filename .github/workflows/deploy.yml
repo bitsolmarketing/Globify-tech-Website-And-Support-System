@@ -10,11 +10,17 @@
 #
 # The `confirm` job closes the loop the pull model leaves open. GitHub cannot
 # open a connection to the server, but it can watch the public site, so it polls
-# /api/version until the pushed commit is the one answering. That distinguishes
-# the two states a pull-based deploy otherwise conflates — still building, and
-# stopped fetching entirely — and makes the second one a red build instead of a
-# page nobody noticed had gone stale. Set the repository variable
-# DEPLOY_CONFIRM=off to skip it.
+# /api/version until the pushed commit — or a descendant of it — is the one
+# answering. That distinguishes the two states a pull-based deploy otherwise
+# conflates — still building, and stopped fetching entirely — and makes the
+# second one a red build instead of a page nobody noticed had gone stale. Set
+# the repository variable DEPLOY_CONFIRM=off to skip it.
+#
+# Descendants count because deploys are slower than pushes. The cron builds
+# whatever is on main when it wakes, so two pushes three minutes apart produce
+# one build, of the newer commit. The older one reached production inside it and
+# never appears on its own — insisting on an exact match failed a deploy that
+# had worked perfectly.
 #
 # When the deploy source moves (a renamed or replaced repository), the server's
 # own checkout has to be repointed too, or the cron keeps polling an address
@@ -93,14 +99,19 @@ jobs:
     if: github.event_name == 'push' && vars.DEPLOY_CONFIRM != 'off'
     runs-on: ubuntu-latest
     steps:
+      # Needed to answer "is the commit that IS live a descendant of mine?" —
+      # the full history, because a shallow clone cannot compute ancestry.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Wait for /api/version to report this commit
         env:
           SITE_URL: ${{ vars.SITE_URL || 'https://globifytech.com' }}
-          # Cron polls every 5 minutes and a low-memory build on shared hosting
-          # takes several more, so the budget has to cover both with room to
-          # spare. Below about 15 minutes this reports failures that were only
-          # ever slowness.
-          TIMEOUT_MINUTES: ${{ vars.DEPLOY_CONFIRM_TIMEOUT || '20' }}
+          # Measured on this host: the cron picks a push up in about a minute,
+          # and the build itself takes roughly fifteen. Twenty minutes left no
+          # margin at all and produced a red run for a deploy that had worked.
+          TIMEOUT_MINUTES: ${{ vars.DEPLOY_CONFIRM_TIMEOUT || '35' }}
         run: |
           set -u
           site="${SITE_URL%/}"
@@ -129,6 +140,23 @@ jobs:
                 exit 0
               fi
 
+              # Deploys take longer than pushes do. When two land close
+              # together the server builds only the newer one, so this commit
+              # can go to production inside another commit and never appear on
+              # its own — demanding an exact match fails a deploy that worked.
+              # A descendant being live means this commit is in production.
+              if [ -n "$live" ]; then
+                git cat-file -e "$live^{commit}" 2>/dev/null ||
+                  git fetch --quiet origin "$GITHUB_REF_NAME" 2>/dev/null || true
+
+                if git merge-base --is-ancestor "$GITHUB_SHA" "$live" 2>/dev/null; then
+                  echo "Live: ${live:0:7}, which contains ${GITHUB_SHA:0:7} — superseded by a newer push."
+                  printf '%s' "$payload" | jq '.configured' > configured.json
+                  echo "SUPERSEDED_BY=${live:0:7}" >> "$GITHUB_ENV"
+                  exit 0
+                fi
+              fi
+
               if [ -n "$live" ] && [ "$live" != "$seen" ]; then
                 seen="$live"
                 echo "  still on ${live:0:7} … ($((SECONDS / 60))m elapsed)"
@@ -146,9 +174,10 @@ jobs:
           that the server's checkout points at THIS repository (git remote -v in the app directory) \
           and that the cron job is still installed."
           else
-            echo "::error::$site is still not serving ${GITHUB_SHA:0:7} after ${TIMEOUT_MINUTES} minutes. \
-          The cron either is not running, is polling a different repository, or the build failed and \
-          rolled back. The log on the server has the answer: tail -40 ~/domains/globifytech.com/.globify-deploy/deploy.log"
+            echo "::error::$site is serving ${seen:0:7}, not ${GITHUB_SHA:0:7}, after ${TIMEOUT_MINUTES} minutes — \
+          and the live commit is not a descendant of this one, so it was not superseded by a newer push. \
+          The cron is either not running, polling a different repository, or the build failed and rolled back. \
+          The log on the server has the answer: tail -40 ~/domains/globifytech.com/.globify-deploy/deploy.log"
           fi
           exit 1
 
@@ -158,7 +187,12 @@ jobs:
           {
             echo "### Live on globifytech.com"
             echo
-            echo "\`${GITHUB_SHA:0:7}\` is being served."
+            if [ -n "${SUPERSEDED_BY:-}" ]; then
+              echo "\`${GITHUB_SHA:0:7}\` reached production inside \`${SUPERSEDED_BY}\`, which is"
+              echo "being served — a later push overtook this one before the server built it."
+            else
+              echo "\`${GITHUB_SHA:0:7}\` is being served."
+            fi
             echo
             echo "| Setting | Configured |"
             echo "| --- | --- |"

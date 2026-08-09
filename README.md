@@ -643,11 +643,18 @@ set on the server. Booleans only: whether a secret exists is not a secret, its
 value is.
 
 The `confirm` job in [`deploy.yml`](.github/workflows/deploy.yml) polls that
-endpoint after every push until the pushed commit is the one answering, and
-fails the run if it never appears. GitHub cannot open a connection to the server
-— that is the whole reason deploys are pull-based — but it can watch the public
-site, which is enough to tell "still building" from "not deploying at all". Set
-the repository variable `DEPLOY_CONFIRM=off` to skip it.
+endpoint after every push until the pushed commit — **or a descendant of it** —
+is the one answering, and fails the run if neither appears. GitHub cannot open a
+connection to the server, which is the whole reason deploys are pull-based, but
+it can watch the public site, and that is enough to tell "still building" from
+"not deploying at all". Set `DEPLOY_CONFIRM=off` to skip it, or
+`DEPLOY_CONFIRM_TIMEOUT` to change the 35-minute budget.
+
+Descendants count because deploys are slower than pushes. The cron builds
+whatever is on `main` when it wakes, so two pushes three minutes apart produce
+one build, of the newer commit; the older one reaches production inside it and
+never appears on its own. Measured on this host: the cron picks up a push in
+about a minute and the build takes roughly fifteen.
 
 **Historical note.** Until the first deploy of this repository, `globifytech.com`
 served a build whose catalogue matched no commit here — eight courses with slugs
