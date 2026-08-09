@@ -617,6 +617,35 @@ Two consequences worth knowing:
 to run against a dirty tree, so an untracked directory left behind by a failed
 deploy would block every deploy after it.
 
+### Why a cached page could outlive its own JavaScript
+
+Next stamps statically prerendered pages with `s-maxage=31536000` — cache for a
+year — and Hostinger's edge honours it. Meanwhile every build renames its
+JavaScript and CSS by content hash and deletes the previous names. A page held
+at the edge from before a deploy therefore asks for chunks the server no longer
+has; they 404, React cannot hydrate, and every element still sitting at the
+`opacity: 0` its reveal animation starts from stays invisible. The result is a
+blank page served from cache, and it lasts as long as the edge keeps it.
+
+This happened to the home page: pinned for over two hours, referencing five
+chunks that no longer existed, while every other page was fine — the only
+difference being that that copy was cached during a deploy. A `Cache-Control:
+no-cache` request bypasses the edge but does not refresh it, so once it is in
+that state only **hPanel › Performance › Purge Cache** clears it.
+
+Two changes make it stop happening:
+
+- **Pages are cached for 60 seconds, not a year** (`s-maxage=60,
+  stale-while-revalidate=300`), so the worst case is minutes. Hashed assets
+  under `/_next/static` and `/images` keep their immutable year, and
+  `/api/version` keeps `no-store` — a cached answer there would report the
+  previous deploy as the current one.
+- **Deploys carry the previous build's assets forward.** `deploy.sh` copies
+  anything in `.next-prev/static` that the new build does not have into
+  `.next/static`, so HTML cached anywhere — the CDN, a browser, a tab left open
+  — still finds what it asks for. Nothing is overwritten: a filename present in
+  both builds is the same file, because the name is a hash of the contents.
+
 ### Knowing whether a deploy landed
 
 Pull-based deployment has one blind spot: nothing reports back. A build still

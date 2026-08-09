@@ -194,14 +194,69 @@ const nextConfig = {
       },
     ]
 
+    const immutable = [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }]
+
+    /* Rules are applied in order and a later one wins for the same key, so the
+       blanket cache rule below comes first and the assets that really are
+       immutable re-assert themselves after it. */
     return [
       { source: '/:path*', headers: securityHeaders },
+
+      /* ------------------------------------------------------------------
+         How long the CDN may hold a page
+
+         Next stamps statically prerendered pages with
+         `s-maxage=31536000, stale-while-revalidate` — cache for a year — and
+         Hostinger's edge takes it literally. Every build gives its JavaScript
+         new hashed filenames and deletes the old ones, so a page held at the
+         edge from before a deploy asks for chunks the server no longer has.
+         They 404, React cannot hydrate, and every element still holding its
+         server-rendered `opacity: 0` never becomes visible: a blank page,
+         served from cache, for as long as the edge keeps it.
+
+         That is not hypothetical. The home page was pinned this way for over
+         two hours while every other page was fine, purely because that copy
+         happened to be cached during a deploy.
+
+         A minute at the edge with five more of stale-while-revalidate keeps
+         essentially all of the benefit — traffic still collapses onto cached
+         responses — while bounding the damage to minutes rather than a year.
+         ------------------------------------------------------------------ */
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=0, s-maxage=60, stale-while-revalidate=300',
+          },
+        ],
+      },
+
+      /* Hashed filenames: a new build cannot collide with these, so they are
+         safe to keep for a year. This has to come after the blanket rule or
+         every asset would be re-fetched every minute. */
+      { source: '/_next/static/:path*', headers: immutable },
+
+      /* Route handlers decide their own freshness — /api/version in particular
+         must never be answered from a cache, since a cached answer would report
+         the previous deploy as the current one. */
+      { source: '/api/:path*', headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }] },
+
+      /* …except the OG image endpoint, which is expensive to generate and
+         changes only when its query string does. */
+      {
+        source: '/api/og',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=3600, s-maxage=604800, stale-while-revalidate=604800',
+          },
+        ],
+      },
       {
         // Immutable caching for pre-generated media.
         source: '/images/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
-        ],
+        headers: immutable,
       },
       {
         source: '/feed.xml',

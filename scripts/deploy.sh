@@ -209,6 +209,24 @@ rm -rf "$PREVIOUS_BUILD"
 [ -d .next ] && mv .next "$PREVIOUS_BUILD"
 mv "$STAGING" .next
 
+# Carry the previous build's assets forward.
+#
+# Every build renames its JavaScript and CSS by content hash and the old names
+# stop existing. Any HTML from before the deploy — held at the CDN, sitting in a
+# browser cache, or open in a tab someone has not reloaded — still asks for the
+# old names, gets 404s, and cannot hydrate. The page is not blank because it
+# failed to render; it is blank because everything is still at the `opacity: 0`
+# its reveal animation starts from and the script that would clear it is gone.
+#
+# Copying what the previous build had and this one does not makes those requests
+# keep working. Nothing is overwritten — a filename that exists in both builds is
+# the same file by construction, since the name is a hash of the contents.
+if [ -d "$PREVIOUS_BUILD/static" ]; then
+  carried=$(cd "$PREVIOUS_BUILD/static" && find . -type f | wc -l)
+  cp -rn "$PREVIOUS_BUILD/static/." .next/static/ 2>/dev/null || true
+  log "Carried forward $carried asset(s) from the previous build for cached pages"
+fi
+
 log "Restarting"
 restart_app
 
