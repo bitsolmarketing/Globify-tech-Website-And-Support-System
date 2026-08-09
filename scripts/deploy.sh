@@ -154,6 +154,33 @@ else
 fi
 
 # --------------------------------------------------------------------------
+# Schema before code
+#
+# Two reasons this runs here and not after the build. The build reads the
+# database to prerender ~80 pages, so building first would run every one of
+# those reads against the old schema. And more importantly, code that selects a
+# column the database does not have is an outage rather than a degraded page:
+# the data layer's fallback covers an unreachable database, not a missing
+# column, so /admin/leads would simply throw.
+#
+# A failed migration therefore aborts before anything is built or swapped, which
+# leaves the previous build serving untouched.
+#
+# Skipped when there is no DATABASE_URL — the same condition under which the
+# build falls back to seed content anyway.
+# --------------------------------------------------------------------------
+if [ -n "${DATABASE_URL:-}" ] || grep -qsE '^DATABASE_URL=.+' .env.production.local .env.local; then
+  log "Applying database migrations"
+  if ! npm run db:migrate; then
+    warn "Migration failed — rolling the checkout back to $PREVIOUS"
+    git reset --hard "$PREVIOUS"
+    die "Deploy aborted before building. The previous build is untouched and still being served."
+  fi
+else
+  warn "No DATABASE_URL — skipping migrations. The build will use seed content."
+fi
+
+# --------------------------------------------------------------------------
 # Build somewhere else, then swap
 #
 # The build used to be written straight into `.next`, which is the directory
