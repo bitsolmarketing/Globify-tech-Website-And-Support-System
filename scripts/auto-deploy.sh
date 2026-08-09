@@ -73,10 +73,51 @@ fi
 
 # Quietly, and tolerating a blip: a failed fetch is a network hiccup, not an
 # event. The next poll is five minutes away.
-if ! git fetch --quiet --prune origin "$BRANCH" 2>>"$LOG"; then
-  log "fetch failed — will retry on the next poll"
+# A single failed fetch is a network hiccup and not worth waking anyone for; the
+# next poll is five minutes away. A *persistent* one is the opposite, and it is
+# the failure this script is worst at showing: a repository that was renamed,
+# made private or replaced makes every fetch fail for ever, deploys stop, and
+# because the message only ever went to the log file, cron stays silent and the
+# site simply keeps serving whatever it had. That is indistinguishable from
+# "nobody has pushed lately" until someone thinks to read the log.
+#
+# So failures are counted, and once they have persisted for three polls the
+# complaint goes to stderr — which is what cron actually mails — with git's own
+# reason attached, because "Repository not found" and "Could not resolve host"
+# call for very different responses.
+FAILURES="$STATE_DIR/fetch-failures"
+
+if ! fetch_error="$(git fetch --quiet --prune origin "$BRANCH" 2>&1)"; then
+  [ -n "$fetch_error" ] && printf '%s\n' "$fetch_error" >> "$LOG"
+
+  count=$(( $(cat "$FAILURES" 2>/dev/null || echo 0) + 1 ))
+  printf '%s' "$count" > "$FAILURES"
+  log "fetch failed ($count in a row) — will retry on the next poll"
+
+  if [ "$count" -ge 3 ]; then
+    remote_url="$(git remote get-url origin 2>/dev/null || echo 'unknown')"
+    cat >&2 <<EOF
+globify deploy: cannot fetch origin/$BRANCH — $count consecutive failures.
+
+  remote : $remote_url
+  git    : ${fetch_error:-no output}
+
+Deploys have stopped. The site keeps serving the last successful build, so
+nothing looks wrong from outside. If the repository moved, repoint the checkout:
+
+  cd $APP_DIR && git remote set-url origin <new-url>
+
+Full history: $LOG
+EOF
+  fi
   exit 0
 fi
+
+# Recovered — forget the streak so the next outage is judged on its own.
+# `rm -f` rather than a guarded remove: it succeeds whether or not the file is
+# there, which keeps the common case (no failures to forget) from producing a
+# non-zero status under `set -e`.
+rm -f "$FAILURES"
 
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"

@@ -1,11 +1,26 @@
-# Verifies main, and — where the network allows it — deploys.
+# Verifies main, waits for the deploy to land, and — where the network allows
+# it — deploys.
 #
-# Deployment for globifytech.com is currently PULL-based: scripts/auto-deploy.sh
-# runs from cron on the server, polls origin/main, and deploys when it moves.
-# Hostinger's firewall drops GitHub-hosted runners, so the push-based job below
-# stays switched off (see DEPLOY_MODE). What this workflow guarantees on every
-# push is that main typechecks and lints — the server deploys whatever is on
-# main, so a broken commit would otherwise be found by the cron, in production.
+# Deployment for globifytech.com is PULL-based: scripts/auto-deploy.sh runs from
+# cron on the server, polls origin/main, and deploys when it moves. Hostinger's
+# firewall drops GitHub-hosted runners, so the push-based job below stays
+# switched off (see DEPLOY_MODE). What this workflow guarantees on every push is
+# that main typechecks and lints — the server deploys whatever is on main, so a
+# broken commit would otherwise be found by the cron, in production.
+#
+# The `confirm` job closes the loop the pull model leaves open. GitHub cannot
+# open a connection to the server, but it can watch the public site, so it polls
+# /api/version until the pushed commit is the one answering. That distinguishes
+# the two states a pull-based deploy otherwise conflates — still building, and
+# stopped fetching entirely — and makes the second one a red build instead of a
+# page nobody noticed had gone stale. Set the repository variable
+# DEPLOY_CONFIRM=off to skip it.
+#
+# When the deploy source moves (a renamed or replaced repository), the server's
+# own checkout has to be repointed too, or the cron keeps polling an address
+# that no longer exists and reports nothing at all:
+#
+#   cd ~/domains/globifytech.com/app && git remote set-url origin <new-url>
 #
 # The build never happens on the runner either way. `next build` pre-renders ~80
 # pages by reading the database, which only accepts connections from the server
@@ -66,6 +81,98 @@ jobs:
       - run: npm run typecheck
 
       - run: npm run lint
+
+  # Waits for the server to actually serve this commit.
+  #
+  # This is the only feedback the pull-based deploy has. It runs on push only —
+  # a manual dispatch may be re-running an already-deployed commit, which would
+  # pass instantly and prove nothing.
+  confirm:
+    name: Confirm the deploy landed
+    needs: verify
+    if: github.event_name == 'push' && vars.DEPLOY_CONFIRM != 'off'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for /api/version to report this commit
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://globifytech.com' }}
+          # Cron polls every 5 minutes and a low-memory build on shared hosting
+          # takes several more, so the budget has to cover both with room to
+          # spare. Below about 15 minutes this reports failures that were only
+          # ever slowness.
+          TIMEOUT_MINUTES: ${{ vars.DEPLOY_CONFIRM_TIMEOUT || '20' }}
+        run: |
+          set -u
+          site="${SITE_URL%/}"
+          deadline=$(( SECONDS + TIMEOUT_MINUTES * 60 ))
+          seen=""
+          missing_endpoint=0
+
+          echo "Waiting for $site to serve ${GITHUB_SHA:0:7} (up to ${TIMEOUT_MINUTES}m)."
+
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            # `-w` captures the status separately: a CDN error page is valid
+            # JSON often enough that parsing alone cannot tell them apart.
+            response="$(curl -sS --max-time 30 -w '\n%{http_code}' "$site/api/version" 2>/dev/null || true)"
+            status="$(printf '%s' "$response" | tail -n1)"
+            payload="$(printf '%s' "$response" | sed '$d')"
+
+            if [ "$status" = "404" ]; then
+              missing_endpoint=1
+            elif [ "$status" = "200" ]; then
+              missing_endpoint=0
+              live="$(printf '%s' "$payload" | jq -r '.commit // empty' 2>/dev/null || true)"
+
+              if [ "$live" = "$GITHUB_SHA" ]; then
+                echo "Live: ${live:0:7} — deployed after $((SECONDS / 60))m $((SECONDS % 60))s."
+                printf '%s' "$payload" | jq '.configured' > configured.json
+                exit 0
+              fi
+
+              if [ -n "$live" ] && [ "$live" != "$seen" ]; then
+                seen="$live"
+                echo "  still on ${live:0:7} … ($((SECONDS / 60))m elapsed)"
+              fi
+            fi
+
+            sleep 15
+          done
+
+          echo
+          if [ "$missing_endpoint" = 1 ]; then
+            echo "::error::$site/api/version returned 404 for the whole window. The build being \
+          served predates that endpoint, so it cannot be this commit — the deploy has not landed. \
+          If this is the first push since /api/version was added, the cron is not deploying: check \
+          that the server's checkout points at THIS repository (git remote -v in the app directory) \
+          and that the cron job is still installed."
+          else
+            echo "::error::$site is still not serving ${GITHUB_SHA:0:7} after ${TIMEOUT_MINUTES} minutes. \
+          The cron either is not running, is polling a different repository, or the build failed and \
+          rolled back. The log on the server has the answer: tail -40 ~/domains/globifytech.com/.globify-deploy/deploy.log"
+          fi
+          exit 1
+
+      - name: Report what the deployment is missing
+        if: success()
+        run: |
+          {
+            echo "### Live on globifytech.com"
+            echo
+            echo "\`${GITHUB_SHA:0:7}\` is being served."
+            echo
+            echo "| Setting | Configured |"
+            echo "| --- | --- |"
+            jq -r 'to_entries[] | "| `\(.key)` | \(if .value then "yes" else "**no**" end) |"' configured.json
+            echo
+            echo "A **no** above is why the matching feature is falling back rather than working:"
+            echo "\`assistant\` → /contact/support shows WhatsApp instead of the chat surface."
+            echo "\`metaVerifyToken\` / \`metaAppSecret\` → the Meta webhook refuses every delivery."
+            echo "\`database\` → pages render the checked-in seed content, not the live catalogue."
+            echo
+            echo "**Purge the CDN if a page still looks old.** Hostinger's edge holds HTML for up"
+            echo "to a year (\`s-maxage=31536000\`): hPanel → Websites → globifytech.com →"
+            echo "Performance → **Purge Cache**."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Off unless the repository variable DEPLOY_MODE is set to "ssh".
   #

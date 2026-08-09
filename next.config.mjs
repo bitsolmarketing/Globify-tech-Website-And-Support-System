@@ -1,3 +1,33 @@
+import { execSync } from 'node:child_process'
+
+/*
+ * Which commit this build came from.
+ *
+ * Deploys here are pull-based: cron on the server notices origin/main has moved
+ * and builds it. Nothing reports back, so "did my push actually go live?" was
+ * answerable only by looking for a change on the page and guessing — and a cron
+ * that silently stopped fetching looks exactly like a deploy that has not
+ * finished yet. Baking the commit into the build lets /api/version answer it,
+ * and lets CI wait for a specific commit rather than a plausible-looking page.
+ *
+ * Read at build time from the checkout being built, which is the server's own
+ * checkout during a deploy. Git being absent is not an error — it just means
+ * the build cannot identify itself, and the endpoint says so.
+ */
+function resolveBuildSha() {
+  const provided = process.env.BUILD_SHA || process.env.GITHUB_SHA
+  if (provided) return provided.trim()
+
+  try {
+    return execSync('git rev-parse HEAD', {
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf8',
+    }).trim()
+  } catch {
+    return ''
+  }
+}
+
 /*
  * Canonical host. Every URL the site emits — canonical tags, sitemap entries,
  * JSON-LD @ids, RSS links — is built from NEXT_PUBLIC_SITE_URL through
@@ -19,6 +49,15 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,
+
+  /* Inlined into the build, so `/api/version` reports the commit that produced
+     the running bundle rather than whatever the server's checkout happens to be
+     sitting on now — those differ precisely when a deploy half-failed, which is
+     the case worth detecting. */
+  env: {
+    BUILD_SHA: resolveBuildSha(),
+    BUILD_TIME: new Date().toISOString(),
+  },
 
   // Trailing slashes off => single canonical URL shape (no duplicate-content penalty).
   trailingSlash: false,

@@ -539,8 +539,16 @@ where the data is removes the failure mode rather than documenting around it.
 
 1. **Clone on the server**, into the path the Node.js app serves:
    ```bash
-   git clone https://github.com/bitsolmarketing/globify-tech-14-august.git app
+   git clone https://github.com/bitsolmarketing/Globify-tech-Website-And-Support-System.git app
    cd app && npm ci
+   ```
+
+   If the checkout already exists and the repository has moved, repoint it —
+   `auto-deploy.sh` treats a failed fetch as a network blip and stays silent, so
+   a stale remote stops deploys without ever saying so:
+
+   ```bash
+   git remote set-url origin https://github.com/bitsolmarketing/Globify-tech-Website-And-Support-System.git
    ```
 2. **Create `.env.production.local`** there with the real `DATABASE_URL` (host
    `localhost`), `AUTH_SECRET`, `NEXT_PUBLIC_SITE_URL` and the admin variables.
@@ -579,14 +587,43 @@ change what visitors see until the cache is cleared**: hPanel › Websites ›
 globifytech.com › Performance › **Purge Cache**. Neither the workflow nor the
 script can reach that layer, so both end by saying so.
 
-### Note on the current production build
+### Knowing whether a deploy landed
 
-`globifytech.com` is serving a build whose course catalogue matches no commit in
-this repository — eight courses with slugs (`tiktok-shop-mastery`,
-`agentic-ai-and-workflow-management`, …) that appear in neither the initial
-commit's fourteen nor the current seven. The first deploy of this repository
-therefore *replaces* that site rather than updating it. `next.config.mjs`
-carries 301s for all eight of those URLs so the indexed ones do not become 404s.
+Pull-based deployment has one blind spot: nothing reports back. A build still
+running and a cron that stopped fetching a week ago look identical from outside
+— both serve the old page. That is what makes a broken deploy easy to mistake
+for a broken site.
+
+[`/api/version`](src/app/api/version/route.ts) closes it. The commit is baked
+into the bundle at build time, so it names the code that is answering rather
+than whatever the checkout on disk has since become — those differ exactly when
+a deploy half-failed:
+
+```bash
+curl -s https://globifytech.com/api/version
+# {"commit":"…","shortCommit":"650b691","builtAt":"…",
+#  "configured":{"assistant":false,"metaVerifyToken":false,
+#                "metaAppSecret":false,"database":true}}
+```
+
+`configured` answers the other half. Everything optional here degrades quietly
+by design — the assistant falls back to WhatsApp, the site falls back to seed
+content — so a feature that looks broken is usually a variable that was never
+set on the server. Booleans only: whether a secret exists is not a secret, its
+value is.
+
+The `confirm` job in [`deploy.yml`](.github/workflows/deploy.yml) polls that
+endpoint after every push until the pushed commit is the one answering, and
+fails the run if it never appears. GitHub cannot open a connection to the server
+— that is the whole reason deploys are pull-based — but it can watch the public
+site, which is enough to tell "still building" from "not deploying at all". Set
+the repository variable `DEPLOY_CONFIRM=off` to skip it.
+
+**Historical note.** Until the first deploy of this repository, `globifytech.com`
+served a build whose catalogue matched no commit here — eight courses with slugs
+(`tiktok-shop-mastery`, `agentic-ai-and-workflow-management`, …) belonging to
+neither the initial fourteen nor the current seven. `next.config.mjs` still
+carries 301s for all eight so the indexed URLs did not become 404s.
 
 **After the first deploy:** submit `/sitemap.xml` in Google Search Console, add
 your GA4 and Clarity IDs, and update the contact details in `src/lib/site.ts`.
