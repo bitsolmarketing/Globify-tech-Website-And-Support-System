@@ -473,26 +473,71 @@ export const campaignSettings = mysqlTable('campaign_settings', {
 })
 
 /* ---------------------------------------------------------------------------
- * Leads — contact-form submissions
+ * Leads — every enquiry, whichever channel it arrived on
  * ------------------------------------------------------------------------ */
 
 export const LEAD_STATUSES = ['new', 'contacted', 'enrolled', 'closed'] as const
 export type LeadStatus = (typeof LEAD_STATUSES)[number]
 
+/**
+ * Where an enquiry came from.
+ *
+ * `website` is the contact form. `chatbot` is the assistant on
+ * /contact/support and ai.globifytech.com. The last three are Meta: they arrive
+ * through /api/webhooks/meta, which sees every inbound message before relaying
+ * it to the assistant.
+ */
+export const LEAD_CHANNELS = [
+  'website',
+  'chatbot',
+  'whatsapp',
+  'messenger',
+  'instagram',
+  'manual',
+] as const
+export type LeadChannel = (typeof LEAD_CHANNELS)[number]
+
+/**
+ * Nullability here follows what each channel can actually know.
+ *
+ * The contact form asks for a name, phone, email and course, so it always has
+ * them. Someone who messages the WhatsApp number has a phone number and
+ * possibly a profile name; someone who messages the Facebook page has neither —
+ * only an opaque page-scoped id. Requiring those columns would mean writing
+ * empty strings and calling them data, and every count of "leads with an email"
+ * would be wrong from then on. A missing value is recorded as missing.
+ *
+ * `courseSlug` stays required because "not sure yet" is a real answer the form
+ * already offers, so there is an honest value to default to.
+ */
 export const leads = mysqlTable(
   'leads',
   {
     id: rowId().primaryKey(),
-    name: varchar('name', { length: 191 }).notNull(),
-    phone: varchar('phone', { length: 64 }).notNull(),
-    email: varchar('email', { length: 191 }).notNull(),
+    name: varchar('name', { length: 191 }),
+    phone: varchar('phone', { length: 64 }),
+    email: varchar('email', { length: 191 }),
     /** Course slug, or `not-sure` when the enquirer has not decided. */
-    courseSlug: varchar('course_slug', { length: 191 }).notNull(),
+    courseSlug: varchar('course_slug', { length: 191 }).notNull().default('not-sure'),
     /** Resolved at submission time so the lead survives a course rename. */
-    courseTitle: varchar('course_title', { length: 255 }).notNull(),
-    message: text('message').notNull(),
+    courseTitle: varchar('course_title', { length: 255 }).notNull().default('Not sure yet'),
+    message: text('message'),
     status: varchar('status', { length: 32 }).$type<LeadStatus>().notNull().default('new'),
+    channel: varchar('channel', { length: 32 }).$type<LeadChannel>().notNull().default('website'),
     source: varchar('source', { length: 64 }).notNull().default('website-contact-form'),
+    /**
+     * The identity on the channel it arrived on: a WhatsApp number, a
+     * page-scoped id on Messenger, an Instagram-scoped id. Null for the form,
+     * which identifies people by email.
+     */
+    handle: varchar('handle', { length: 191 }),
+    /**
+     * The sending system's own id for this enquiry — a WhatsApp contact, an
+     * assistant conversation reference. Unique, so a webhook redelivery or a
+     * second message from the same person updates the lead instead of adding
+     * another one. Null for anything with no upstream identity.
+     */
+    externalRef: varchar('external_ref', { length: 191 }),
     campaign: varchar('campaign', { length: 191 }),
     /** Internal follow-up notes, admin-only. */
     notes: text('notes'),
@@ -504,6 +549,8 @@ export const leads = mysqlTable(
     index('leads_status_idx').on(table.status),
     index('leads_course_slug_idx').on(table.courseSlug),
     index('leads_email_idx').on(table.email),
+    index('leads_channel_idx').on(table.channel),
+    uniqueIndex('leads_external_ref_key').on(table.externalRef),
   ],
 )
 

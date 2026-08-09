@@ -7,7 +7,8 @@ import { Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input, Label, Select } from '@/components/ui/field'
-import { LEAD_STATUSES } from '@/db/schema'
+import { channelLabel } from '@/components/admin/channel-badge'
+import { LEAD_CHANNELS, LEAD_STATUSES } from '@/db/schema'
 
 /**
  * Filters live in the URL rather than component state: the table is rendered
@@ -27,6 +28,7 @@ export function LeadFilters({
   const search = searchParams.get('search') ?? ''
   const course = searchParams.get('course') ?? ''
   const status = searchParams.get('status') ?? ''
+  const channel = searchParams.get('channel') ?? ''
 
   const [draft, setDraft] = React.useState(search)
   React.useEffect(() => setDraft(search), [search])
@@ -45,7 +47,7 @@ export function LeadFilters({
     [pathname, router, searchParams],
   )
 
-  const hasFilters = Boolean(search || course || status)
+  const hasFilters = Boolean(search || course || status || channel)
 
   return (
     <Card className="mb-6 p-5">
@@ -54,7 +56,7 @@ export function LeadFilters({
           event.preventDefault()
           push({ search: draft.trim() })
         }}
-        className="grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr_auto] lg:items-end"
+        className="grid gap-4 lg:grid-cols-[1.4fr_1fr_1fr_1fr_auto] lg:items-end"
       >
         <div className="grid gap-2">
           <Label htmlFor={`${fieldId}-search`}>Search</Label>
@@ -63,7 +65,20 @@ export function LeadFilters({
             type="search"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Name, email, phone or message"
+            placeholder="Name, email, phone, handle or message"
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor={`${fieldId}-channel`}>Channel</Label>
+          <Select
+            id={`${fieldId}-channel`}
+            value={channel}
+            onChange={(event) => push({ channel: event.target.value })}
+            options={[
+              { value: '', label: 'All channels' },
+              ...LEAD_CHANNELS.map((value) => ({ value, label: channelLabel(value) })),
+            ]}
           />
         </div>
 

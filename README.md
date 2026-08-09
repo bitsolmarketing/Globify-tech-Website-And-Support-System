@@ -273,6 +273,34 @@ Re-running it is also how you rotate the admin password.
 
 Then sign in at `/admin/login`.
 
+### One inbox for every channel
+
+Enquiries arrive four ways and all of them become rows in `leads`, so the
+admissions team works from one screen instead of three systems:
+
+| Channel | How it gets there |
+| --- | --- |
+| `website` | The contact form, via `/api/contact` |
+| `whatsapp`, `messenger`, `instagram` | `/api/webhooks/meta` records every inbound message as it relays it to the assistant — so these work **without** the assistant being deployed |
+| `chatbot` | The assistant posts to `/api/leads/ingest`, signed with `LEAD_INGEST_SECRET` |
+
+Chat leads are keyed on `external_ref` — the sending system's own id for that
+person — and upserted. A first message creates the lead and every message after
+it updates the same row, so a long conversation is one entry rather than forty,
+and a webhook redelivery cannot duplicate anyone. Later messages fill in details
+the first lacked but never overwrite something with nothing: a photo with no
+caption must not blank the question that came before it.
+
+`name`, `phone`, `email` and `message` are nullable because of this. Someone who
+messages the Facebook page gives you an opaque page-scoped id and nothing else;
+requiring those columns would mean writing empty strings and calling them data.
+`courseSlug` stays required, because "not sure yet" is a real answer the form
+already offers.
+
+The assistant's own conversations stay in its Postgres — this is the lead, not
+the transcript. Reading across to another system would make every page load
+depend on it being up.
+
 ### How content flows after the migration
 
 ```
@@ -301,7 +329,7 @@ runs with zero setup; only the admin actually requires MariaDB.
 | Route | What it does |
 | --- | --- |
 | `/admin` | Leads this week, subscribers, course and post counts, days left in the campaign |
-| `/admin/leads` | Contact-form submissions: search, filter by course and status, inline status changes, CSV export |
+| `/admin/leads` | **Every enquiry, whichever channel it arrived on** — contact form, AI assistant, WhatsApp, Messenger, Instagram. Channel tabs, search, filter by course and status, inline status changes, CSV export |
 | `/admin/courses` | Full CRUD, including nested curriculum modules, outcomes, projects, careers and FAQs |
 | `/admin/posts` | Full CRUD with a markdown editor, live preview through the real renderer, and draft/publish |
 | `/admin/testimonials`, `/admin/faqs`, `/admin/gallery`, `/admin/authors` | Simple CRUD tables |
@@ -586,6 +614,28 @@ been observed holding HTML for over nine days. **A successful deploy will not
 change what visitors see until the cache is cleared**: hPanel › Websites ›
 globifytech.com › Performance › **Purge Cache**. Neither the workflow nor the
 script can reach that layer, so both end by saying so.
+
+### Migrations run before the build
+
+`deploy.sh` applies `npm run db:migrate` before it builds anything. Two reasons
+it belongs there rather than in a runbook: the build reads the database to
+prerender ~80 pages, so building first would run every one of those against the
+old schema; and code that selects a column the database does not have is an
+outage, not a degraded page — the seed fallback covers an *unreachable*
+database, not a *missing column*, so a page like `/admin/leads` would simply
+throw. A failed migration aborts before anything is built or swapped, leaving
+the previous build serving untouched.
+
+`drizzle.config.ts` now loads `.env.production.local` as well. It previously
+loaded only `.env.local` and `.env`, neither of which exists on the server — so
+`npm run db:migrate` there found no `DATABASE_URL` and reported a configuration
+problem instead of migrating.
+
+> **Ordering, once.** `deploy.sh` runs from a copy of itself, so a change to it
+> takes effect on the *next* deploy. A commit that adds both a migration and the
+> code that needs it must therefore land **after** the deploy that installs the
+> migration step, or it will be built without being migrated. Ship
+> infrastructure changes to `deploy.sh` in their own push first.
 
 ### The build does not happen in the directory being served
 

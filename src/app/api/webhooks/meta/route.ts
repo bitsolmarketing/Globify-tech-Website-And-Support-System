@@ -1,14 +1,18 @@
 import type { NextRequest } from 'next/server'
 
+import { isDatabaseConfigured } from '@/db'
+import { upsertChannelLead } from '@/lib/data/leads'
 import {
   channelFor,
   countWhatsAppMessages,
   metaConfig,
   normaliseMessagingEvents,
+  normaliseWhatsAppMessages,
   parseWebhookBody,
   signPayload,
   verifyMetaSignature,
   type MetaChannel,
+  type MetaInboundMessage,
 } from '@/lib/meta'
 
 export const runtime = 'nodejs'
@@ -125,6 +129,44 @@ export async function POST(request: NextRequest) {
 type Outcome = { retry: boolean }
 
 /**
+ * Record inbound messages as leads in the admin inbox.
+ *
+ * This webhook already sees every message from every Meta channel on its way to
+ * the assistant, which makes it the one place that can put WhatsApp, Messenger
+ * and Instagram enquiries in front of the admissions team — today, without
+ * waiting for the assistant to be deployed.
+ *
+ * Deliberately best-effort and never rethrown. Meta's retry behaviour must be
+ * decided by whether the *relay* succeeded and nothing else: a database that is
+ * down should cost a row in the inbox, not a redelivered customer message.
+ */
+async function captureLeads(channel: MetaChannel, messages: MetaInboundMessage[]): Promise<void> {
+  if (!isDatabaseConfigured() || messages.length === 0) return
+
+  for (const message of messages) {
+    try {
+      await upsertChannelLead({
+        channel,
+        /* One lead per person, not per message. Keying on the sender means the
+           second message and the twentieth land on the row the first created,
+           which is what keeps a busy conversation from filling the inbox. */
+        externalRef: `${channel}:${message.senderId}`,
+        handle: message.senderId,
+        name: message.profileName ?? null,
+        /* On WhatsApp the sender id *is* the phone number, so admissions can
+           ring them back. Messenger and Instagram give only a scoped id that
+           means nothing outside the inbox it came from. */
+        phone: channel === 'whatsapp' ? `+${message.senderId.replace(/\D/g, '')}` : null,
+        message: message.text || null,
+        source: `${channel}-webhook`,
+      })
+    } catch (error) {
+      console.error(`[meta] could not record a ${channel} lead:`, error)
+    }
+  }
+}
+
+/**
  * WhatsApp is relayed byte for byte, with Meta's own signature header intact.
  *
  * The assistant already runs a complete WhatsApp handler that verifies the
@@ -140,6 +182,8 @@ async function relayWhatsApp(
   config: ReturnType<typeof metaConfig>,
 ): Promise<Outcome> {
   const count = body ? countWhatsAppMessages(body) : 0
+
+  if (body) await captureLeads('whatsapp', normaliseWhatsAppMessages(body))
 
   if (!config.whatsappForwardUrl) {
     console.error(
@@ -168,6 +212,8 @@ async function relaySocial(
      `messaging`. Those are not conversations and there is nothing to answer, so
      they are acknowledged and left alone. */
   if (messages.length === 0) return { retry: false }
+
+  await captureLeads(channel, messages)
 
   if (!config.socialForwardUrl) {
     console.error(

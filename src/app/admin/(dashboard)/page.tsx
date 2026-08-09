@@ -12,14 +12,22 @@ import {
 import type { LucideIcon } from 'lucide-react'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
+import { ChannelBadge, channelLabel, leadDisplayName } from '@/components/admin/channel-badge'
 import { DataTable, Tbody, Td, Th, Thead, Tr } from '@/components/admin/table'
+import { LEAD_CHANNELS } from '@/db/schema'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { getAllPostsForAdmin } from '@/lib/data/admin-posts'
 import { daysRemaining, getCampaign } from '@/lib/data/campaign'
 import { getCourses } from '@/lib/data/courses'
-import { countLeads, countLeadsByStatus, countLeadsSince, listLeads } from '@/lib/data/leads'
+import {
+  countLeads,
+  countLeadsByChannel,
+  countLeadsByStatus,
+  countLeadsSince,
+  listLeads,
+} from '@/lib/data/leads'
 import { countSubscribers } from '@/lib/data/subscribers'
 import { formatDate, formatDayMonthLong } from '@/lib/utils'
 
@@ -71,6 +79,7 @@ export default async function AdminDashboardPage() {
     posts,
     campaign,
     recentLeads,
+    channelTotals,
   ] = await Promise.all([
     countLeadsSince(7),
     countLeads(),
@@ -80,6 +89,7 @@ export default async function AdminDashboardPage() {
     getAllPostsForAdmin(),
     getCampaign(),
     listLeads({}, 8),
+    countLeadsByChannel(),
   ])
 
   const publishedPosts = posts.filter((post) => post.published).length
@@ -145,6 +155,55 @@ export default async function AdminDashboardPage() {
         />
       </div>
 
+      {/* ------------------------------------------------------- Channels */}
+      {/* Every channel is listed, including the ones at zero. A channel that
+          has never produced a lead and a channel that quietly stopped
+          delivering look identical on a chart that hides empty series, and the
+          second is the one worth noticing. */}
+      <section className="mt-10">
+        <div className="mb-4 flex items-end justify-between gap-4">
+          <h2 className="font-sans text-lg font-bold text-ink-900">Where enquiries come from</h2>
+          <Button asChild variant="link" size="sm">
+            <Link href="/admin/leads">
+              Open the inbox
+              <ArrowRight aria-hidden />
+            </Link>
+          </Button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {LEAD_CHANNELS.map((channel) => {
+            const value = channelTotals[channel]
+            const share = totalLeads > 0 ? Math.round((value / totalLeads) * 100) : 0
+
+            return (
+              <Card key={channel} className="p-4">
+                <Link href={`/admin/leads?channel=${channel}`} className="block">
+                  <div className="flex items-center justify-between gap-3">
+                    <ChannelBadge channel={channel} />
+                    <span className="font-sans text-2xl font-extrabold text-ink-900">{value}</span>
+                  </div>
+
+                  <div
+                    role="img"
+                    aria-label={`${channelLabel(channel)}: ${value} of ${totalLeads} leads, ${share}%`}
+                    className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink-100"
+                  >
+                    <div
+                      className="h-full rounded-full bg-brand-800"
+                      style={{ width: `${share}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 font-sans text-xs text-ink-500">
+                    {value === 0 ? 'Nothing yet' : `${share}% of all enquiries`}
+                  </p>
+                </Link>
+              </Card>
+            )
+          })}
+        </div>
+      </section>
+
       {/* --------------------------------------------------------- Recent */}
       <section className="mt-10">
         <div className="mb-4 flex items-end justify-between gap-4">
@@ -168,6 +227,7 @@ export default async function AdminDashboardPage() {
             <Thead>
               <Tr>
                 <Th>Name</Th>
+                <Th>Channel</Th>
                 <Th>Course</Th>
                 <Th className="hidden sm:table-cell">Phone</Th>
                 <Th>Status</Th>
@@ -179,21 +239,26 @@ export default async function AdminDashboardPage() {
                 <Tr key={lead.id}>
                   <Td>
                     <Link
-                      href={`/admin/leads?search=${encodeURIComponent(lead.email)}`}
+                      href={`/admin/leads?search=${encodeURIComponent(
+                        lead.email ?? lead.handle ?? leadDisplayName(lead),
+                      )}`}
                       className="font-semibold text-ink-900 hover:text-brand-800"
                     >
-                      {lead.name}
+                      {leadDisplayName(lead)}
                     </Link>
                     <span className="block truncate font-sans text-xs text-ink-400">
-                      {lead.email}
+                      {lead.email ?? lead.handle ?? '—'}
                     </span>
+                  </Td>
+                  <Td>
+                    <ChannelBadge channel={lead.channel} />
                   </Td>
                   <Td>
                     <Badge variant="neutral" size="md">
                       {lead.courseTitle}
                     </Badge>
                   </Td>
-                  <Td className="hidden sm:table-cell">{lead.phone}</Td>
+                  <Td className="hidden sm:table-cell">{lead.phone ?? '—'}</Td>
                   <Td>
                     <LeadStatusBadge status={lead.status} />
                   </Td>

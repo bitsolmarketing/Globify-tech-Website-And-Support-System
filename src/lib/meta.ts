@@ -239,6 +239,78 @@ function toIso(value: number | undefined): string {
   return new Date(value < 1e12 ? value * 1000 : value).toISOString()
 }
 
+/**
+ * Flatten a WhatsApp delivery into the same shape as the other two.
+ *
+ * WhatsApp is relayed to the assistant byte for byte and this parse plays no
+ * part in that — it exists so the enquiry can be recorded here as it passes,
+ * which is what puts WhatsApp messages in the admin inbox without waiting for
+ * the assistant to be deployed.
+ */
+export function normaliseWhatsAppMessages(body: MetaWebhookBody): MetaInboundMessage[] {
+  const messages: MetaInboundMessage[] = []
+
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const value = change.value as WhatsAppChangeValue | undefined
+      if (!value?.messages?.length) continue
+
+      for (const raw of value.messages) {
+        if (!raw?.id || !raw.from) continue
+
+        const profile = value.contacts?.find((c) => c.wa_id === raw.from)
+        const base = {
+          channel: 'whatsapp' as const,
+          messageId: raw.id,
+          senderId: raw.from,
+          recipientId: value.metadata?.phone_number_id,
+          profileName: profile?.profile?.name,
+          // WhatsApp sends Unix seconds as a string, unlike the millisecond
+          // numbers Messenger and Instagram use.
+          timestamp: toIso(raw.timestamp ? Number(raw.timestamp) : undefined),
+        }
+
+        if (raw.type === 'text') {
+          messages.push({ ...base, kind: 'text', text: (raw.text?.body ?? '').trim() })
+          continue
+        }
+
+        if (raw.type === 'interactive' || raw.type === 'button') {
+          const reply = raw.interactive?.button_reply ?? raw.interactive?.list_reply
+          messages.push({
+            ...base,
+            kind: 'reply',
+            text: reply?.title ?? raw.button?.text ?? '',
+            replyId: reply?.id ?? raw.button?.payload,
+          })
+          continue
+        }
+
+        messages.push({ ...base, kind: 'media', text: '' })
+      }
+    }
+  }
+
+  return messages
+}
+
+type WhatsAppChangeValue = {
+  metadata?: { phone_number_id?: string }
+  contacts?: { wa_id?: string; profile?: { name?: string } }[]
+  messages?: {
+    id?: string
+    from?: string
+    timestamp?: string
+    type?: string
+    text?: { body?: string }
+    interactive?: {
+      button_reply?: { id?: string; title?: string }
+      list_reply?: { id?: string; title?: string }
+    }
+    button?: { text?: string; payload?: string }
+  }[]
+}
+
 /** How many customer messages a WhatsApp delivery carries. Used for logging. */
 export function countWhatsAppMessages(body: MetaWebhookBody): number {
   let count = 0
