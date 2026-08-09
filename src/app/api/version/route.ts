@@ -37,6 +37,16 @@ export async function GET() {
       commit,
       shortCommit: commit ? commit.slice(0, 7) : null,
       builtAt: process.env.BUILD_TIME || null,
+      /**
+       * When this process started, derived from its own uptime.
+       *
+       * `builtAt` is baked into the bundle and therefore identical across every
+       * restart of the same build — which makes it useless for the question
+       * people actually ask while editing environment variables: "has it picked
+       * them up yet?" Environment variables are read once at start, so this is
+       * the value that answers it.
+       */
+      startedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
       configured: {
         /** `/contact/support` shows the chat surface rather than the fallback. */
         assistant: isAssistantConfigured(),
@@ -46,6 +56,10 @@ export async function GET() {
         metaAppSecret: Boolean(process.env.META_APP_SECRET?.trim()),
         /** Pages render live content rather than the checked-in seed data. */
         database: isDatabaseConfigured(),
+        /** Without it the admin cannot sign in, whatever the database says. */
+        authSecret: Boolean(process.env.AUTH_SECRET?.trim()),
+        /** The assistant can post captured enquiries to /api/leads/ingest. */
+        leadIngest: Boolean(process.env.LEAD_INGEST_SECRET?.trim()),
       },
     },
     {
