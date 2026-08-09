@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Clock, Mail, MapPin, MessageCircle, MessagesSquare, Phone } from 'lucide-react'
+import { Bot, Clock, Mail, MapPin, MessageCircle, MessagesSquare, Phone } from 'lucide-react'
 
 import { ContactForm } from '@/components/forms/contact-form'
 import { GoogleMap } from '@/components/home/google-map'
@@ -48,9 +48,17 @@ const CRUMBS = [{ name: 'Contact', href: '/contact' }]
 /** Takes the WhatsApp link because its prefilled message quotes live campaign copy. */
 const buildChannels = (whatsappHref: string) => [
   {
+    icon: Bot,
+    title: 'AI support assistant',
+    detail: 'Instant answers on courses, fees and timings — right here on the site, any hour',
+    action: 'Open the assistant',
+    href: '/contact/support',
+    external: false,
+  },
+  {
     icon: MessageCircle,
     title: 'WhatsApp chat bot',
-    detail: `${contactInfo.whatsappDisplay} — instant answers, any time of day`,
+    detail: `${contactInfo.whatsappDisplay} — the same assistant, on your phone`,
     action: 'Start a chat',
     href: whatsappHref,
     external: true,

@@ -22,8 +22,10 @@ export function WhatsAppButton({ campaign }: { campaign: Campaign }) {
     return () => clearTimeout(timer)
   }, [dismissed])
 
-  /* Hide on the contact page — the form is right there. */
-  if (pathname === '/contact') return null
+  /* Hide across /contact — the enquiry form is on one page and the assistant is
+     on the other, so a floating chat button there only competes with the thing
+     the visitor already came for. */
+  if (pathname.startsWith('/contact')) return null
 
   const href = `https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(message)}`
 

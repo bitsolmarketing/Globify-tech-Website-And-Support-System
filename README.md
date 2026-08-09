@@ -55,11 +55,14 @@ npm run db:studio              # browse the database in Drizzle Studio
 | `/blog/author/[author]` | SSG ×5 | Author profiles + courses they teach + their articles |
 | `/faqs` | Static | 19 FAQs grouped by topic with anchor navigation |
 | `/contact` | Static | Channels, validated form, deferred map |
+| `/contact/support` | Static | AI assistant chat surface — streams from `ai.globifytech.com`, same-origin |
 | `/search` | Static | Client-side search across courses, articles and pages |
 | `/privacy-policy`, `/terms` | Static | Full legal content |
 | `/sitemap.xml`, `/robots.txt`, `/feed.xml`, `/manifest.webmanifest` | Generated | 70 sitemap URLs, RSS 2.0 with 10 items |
 | `/api/og` | Dynamic | Automatic Open Graph image generation |
 | `/api/contact`, `/api/newsletter` | Dynamic | Validated, rate-limited endpoints that store submissions in MariaDB |
+| `/api/support/chat` | Dynamic | Streaming proxy to the AI assistant — pipes SSE straight through |
+| `/api/webhooks/meta`, `/webhook` | Dynamic | Signed Meta callback for WhatsApp, Messenger and Instagram |
 | `not-found` | Static | Branded 404 with course suggestions |
 | `/admin/*` | Dynamic | Authenticated dashboard — noindex, middleware-gated, excluded from the sitemap |
 
@@ -362,6 +365,13 @@ CONTACT_FORM_WEBHOOK_URL                # optional lead notification; DB is the 
 CONTACT_FORM_TO_EMAIL
 NEWSLETTER_WEBHOOK_URL                  # optional provider sync
 
+# AI assistant + Meta webhook — see "The AI assistant" below
+AI_ASSISTANT_URL                        # origin of ai.globifytech.com; blank = fallback UI
+META_VERIFY_TOKEN                       # the token typed into Meta's webhook form
+META_APP_SECRET                         # Meta > App settings > Basic; blank = reject everything
+META_WHATSAPP_FORWARD_URL               # optional override; defaults to the assistant
+META_SOCIAL_FORWARD_URL                 # optional override; defaults to the assistant
+
 # Admin — required for /admin, see "Admin setup" above
 DATABASE_URL                            # any MySQL / MariaDB (password percent-encoded)
 AUTH_SECRET                             # npx auth secret
@@ -370,6 +380,123 @@ ADMIN_PASSWORD                          # min 12 chars, bcrypt-hashed before sto
 ADMIN_NAME                              # optional, defaults to "Administrator"
 AUTH_URL                                # optional; only when the origin is not auto-detected
 ```
+
+---
+
+## The AI assistant
+
+The assistant is a **separate application** — its own repository, its own
+Postgres, its own admin console — deployed at `ai.globifytech.com`:
+
+<https://github.com/bitsolmarketing/Chat-Bot-Globify-tech->
+
+This repository does not contain it and does not depend on it at build time.
+What it contains is the two places the two systems touch.
+
+```
+                    globifytech.com  (this repository)
+                            │
+  visitor ──▶ /contact/support  ──▶ /api/support/chat ───┐
+                                    (streams SSE)        │
+                                                         ▼
+  Meta ─────▶ /webhook ─────────▶ /api/webhooks/meta ──▶ ai.globifytech.com
+              (one callback URL)   (verify, route)        · /api/chat
+                                                          · /api/whatsapp/webhook
+```
+
+### 1. Chat — `/contact/support`
+
+A sub-section of Contact, not a separate destination: the assistant is one more
+support channel alongside WhatsApp, the counsellor's line and the enquiry form,
+and the Contact page links to it first.
+
+The chat surface is built from this site's own components and posts to
+`/api/support/chat`, which proxies server-side to the assistant's `/api/chat`
+and pipes the Server-Sent Events back untouched. That placement buys three
+things an `<iframe>` or a direct browser call would not:
+
+- **Same-origin.** No CORS preflight before every message, no third-party
+  cookie, nothing for a tracking blocker to sever.
+- **Streaming survives.** The body is piped, never buffered — a reply that
+  starts appearing in about a second stays that way. `X-Accel-Buffering: no`
+  is set because a buffering CDN otherwise holds every token until the answer
+  is finished and the widget looks frozen for the whole reply.
+- **The assistant's address is a server-side detail.** It can move, be renamed,
+  or go behind a private network without a line of client code changing.
+
+`AI_ASSISTANT_URL` is deliberately **not** defaulted to the subdomain. Unset is
+a real state — the assistant is not wired up yet — and the page renders it
+honestly, showing WhatsApp and the counsellor's number instead of a chat box
+that cannot answer. Runtime failures land in the same place: a 502 or 503 from
+the proxy puts the human channels on screen mid-conversation.
+
+> **It is read at build time.** `/contact/support` is pre-rendered like every
+> other page here, so the choice between the chat surface and the fallback is
+> baked in by `next build`. Put the value in `.env.production.local` and deploy
+> — `deploy.sh` rebuilds, so the page follows. Setting it *only* in the hPanel
+> Node.js panel afterwards changes nothing visible until the next build, even
+> though `/api/support/chat` behind it will already be relaying correctly.
+
+The assistant signals a handoff (`ADMISSION_FORM`, `MEETING_FORM`,
+`CAREER_FORM`, `SUPPORT_FORM`) when a conversation reaches an actual enrolment
+or support request. On `ai.globifytech.com` that opens a structured form; here
+it hands the visitor to the equivalent journey that already exists — the enquiry
+form that writes to `leads` and notifies admissions, or WhatsApp. Escalations
+still raise a ticket in the assistant's own CRM, because that happens
+server-side before the stream closes.
+
+### 2. Meta webhook — `/webhook`
+
+**One callback URL for the whole Meta developer app.** WhatsApp Cloud API, a
+Facebook Page inbox and Instagram DMs all deliver to whatever URL is registered
+against the app, and all three sign with the same app secret, so one endpoint
+verifies once and routes on `body.object`.
+
+It lives on `globifytech.com` rather than on the assistant because this host is
+the one with settled DNS, a certificate and an uptime record. The assistant can
+be rebuilt, moved or taken down without touching anything Meta knows about.
+
+**Setup**
+
+1. Set `META_VERIFY_TOKEN` (invent one: `openssl rand -hex 16`) and
+   `META_APP_SECRET` (Meta ▸ App settings ▸ Basic) in the environment, then
+   deploy — the URL must answer *before* Meta will verify it.
+2. Register `https://globifytech.com/webhook` as the callback URL and paste the
+   same verify token, under each product:
+   - WhatsApp ▸ Configuration ▸ Webhook — subscribe to `messages`
+   - Messenger ▸ Settings ▸ Webhooks — subscribe to `messages`,
+     `messaging_postbacks`
+   - Instagram ▸ Settings ▸ Webhooks — subscribe to `messages`
+3. Set `AI_ASSISTANT_URL` so deliveries have somewhere to go.
+
+**How a delivery is handled**
+
+- **Signature first.** Every POST is checked against `X-Hub-Signature-256` over
+  the raw bytes before anything is parsed. A missing `META_APP_SECRET` rejects
+  *all* traffic on purpose: an unverified public webhook is an open door, so
+  "not configured" must never mean "accept everything".
+- **WhatsApp is relayed byte for byte**, with Meta's own signature header
+  intact, to the assistant's existing `/api/whatsapp/webhook`. The same secret
+  over the same bytes produces the same HMAC, so it verifies there exactly as
+  if Meta had called it directly — nothing is re-signed and nothing downstream
+  has to learn to trust this host.
+- **Messenger and Instagram are normalised** into one shape
+  (`{ channel, messages[] }`, echoes and attachments handled) and posted to
+  `META_SOCIAL_FORWARD_URL`, re-signed with the same scheme so the receiver
+  verifies with the code it already has.
+- **Retries are asked for only when a retry could help.** Meta redelivers on any
+  non-2xx, and after enough failures it disables the subscription for *every*
+  product on the app. So a downstream 5xx or network error returns 502 and asks
+  for redelivery; a downstream 4xx — no such route, wrong shape — is logged at
+  full volume and acknowledged, because retrying it forever fixes nothing and
+  risks the WhatsApp subscription along with it. Redelivery is safe either way:
+  the assistant deduplicates by message id, so it cannot answer a customer
+  twice.
+
+**Not wired up yet:** the assistant implements `/api/whatsapp/webhook` but has
+no Messenger/Instagram endpoint. Until one exists at `META_SOCIAL_FORWARD_URL`,
+those deliveries are verified, normalised, logged and acknowledged — accepted
+and dropped, not silently lost to a retry loop.
 
 ---
 

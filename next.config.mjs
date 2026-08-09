@@ -117,6 +117,15 @@ const nextConfig = {
     ]
   },
 
+  /* The callback URL registered in the Meta developer app is the short, public
+     `/webhook`, while the handler lives with the other route handlers under
+     `/api/webhooks/meta`. A rewrite serves both from one implementation — and
+     it has to be a rewrite, not a redirect: Meta does not follow 3xx on webhook
+     delivery, so the registered path must answer 200 itself. */
+  async rewrites() {
+    return [{ source: '/webhook', destination: '/api/webhooks/meta' }]
+  },
+
   async headers() {
     const securityHeaders = [
       { key: 'X-Content-Type-Options', value: 'nosniff' },

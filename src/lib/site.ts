@@ -247,6 +247,7 @@ export const footerNav = {
     { label: 'Campus Gallery', href: '/gallery' },
     { label: 'FAQs', href: '/faqs' },
     { label: 'Contact Us', href: '/contact' },
+    { label: 'AI Support Assistant', href: '/contact/support' },
   ],
   courses: [
     { label: 'Digital Media Marketing with AI', href: '/courses/digital-media-marketing-with-ai' },
