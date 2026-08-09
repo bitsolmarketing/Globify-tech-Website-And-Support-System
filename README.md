@@ -587,6 +587,36 @@ change what visitors see until the cache is cleared**: hPanel › Websites ›
 globifytech.com › Performance › **Purge Cache**. Neither the workflow nor the
 script can reach that layer, so both end by saying so.
 
+### The build does not happen in the directory being served
+
+`next build` empties its output directory and rewrites it. When that directory
+is `.next` — the one Passenger is serving from — the site spends the whole build
+handing visitors prerendered HTML that references hashed stylesheets and scripts
+which no longer exist. The markup is correct and everything else is missing: no
+CSS, no JavaScript, an unreadable page. On this host that lasted **minutes, on
+every single deploy**, and it looked exactly like the site had broken.
+
+So the build goes to `.next-build` and is renamed into place once it is
+complete. `next.config.mjs` reads `NEXT_DIST_DIR` for this; nothing else sets
+it, so ordinary builds still write `.next`. The exposure drops from a whole
+build to two renames, and a build that *fails* never touches the served
+directory at all — the running site cannot be damaged by it.
+
+Two consequences worth knowing:
+
+- **The previous build is kept** as `.next-prev` until the smoke test passes. If
+  `DEPLOY_SMOKE_URL` is set and the restarted app does not answer 200, the
+  deploy puts the old build back, resets the checkout and restarts — an actual
+  rollback rather than a line in a log. Point it at `/api/version`, which is
+  `no-store` and therefore cannot be answered by the CDN out of cache.
+- **`npm ci` is skipped when neither manifest changed.** It begins by deleting
+  `node_modules`, which the live app is running out of, and most deploys here
+  change only content.
+
+`.next-build` and `.next-prev` are git-ignored deliberately: `deploy.sh` refuses
+to run against a dirty tree, so an untracked directory left behind by a failed
+deploy would block every deploy after it.
+
 ### Knowing whether a deploy landed
 
 Pull-based deployment has one blind spot: nothing reports back. A build still

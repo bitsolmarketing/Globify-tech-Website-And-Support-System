@@ -44,8 +44,21 @@ const duplicateHost = canonicalHost.startsWith('www.')
   ? canonicalHost.slice(4)
   : `www.${canonicalHost}`
 
+/*
+ * Where the build is written.
+ *
+ * Normally `.next`, which is also what `next start` serves. During a deploy it
+ * is pointed somewhere else so the build never touches the directory being
+ * served — see scripts/deploy.sh. Building in place rewrites `.next/static`
+ * while Passenger is still serving prerendered HTML that references the old
+ * hashed filenames, and for the minutes that takes, every visitor gets a page
+ * whose stylesheets 404: correct markup, no CSS, unreadable.
+ */
+const distDir = process.env.NEXT_DIST_DIR || '.next'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir,
   reactStrictMode: true,
   poweredByHeader: false,
   compress: true,

@@ -9,6 +9,12 @@
 
 # next.js
 /.next/
+# Deploy staging and the previous build kept for rollback — see scripts/deploy.sh.
+# Untracked but also invisible to `git status`, which matters because deploy.sh
+# refuses to run against a dirty tree and would otherwise block itself.
+/.next-build/
+/.next-prev/
+/.next-swapped/
 /out/
 next-env.d.ts
 

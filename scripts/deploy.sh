@@ -30,6 +30,25 @@ log()  { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
 warn() { printf '\033[33m!  %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[31m✗  %s\033[0m\n' "$*" >&2; exit 1; }
 
+# Restarting happens twice — once for the new build, and once more if the smoke
+# test fails and the previous one has to be put back — so the host detection
+# lives in one place rather than being written out and drifting apart.
+restart_app() {
+  if [ -n "${DEPLOY_RESTART_CMD:-}" ]; then
+    eval "$DEPLOY_RESTART_CMD"
+  elif command -v pm2 >/dev/null 2>&1 && pm2 describe globify-tech >/dev/null 2>&1; then
+    pm2 reload globify-tech --update-env
+  elif [ -d tmp ] || [ -f Passengerfile.json ]; then
+    # Passenger — which is what hPanel's Node.js app manager runs — watches this
+    # file's mtime and restarts on change.
+    mkdir -p tmp && touch tmp/restart.txt
+  else
+    warn "No restart mechanism detected. The new build will not be served until
+   the app restarts — do it in hPanel > Advanced > Node.js, or set
+   DEPLOY_RESTART_CMD to the right command for this host."
+  fi
+}
+
 # --------------------------------------------------------------------------
 # Preflight
 #
@@ -95,34 +114,78 @@ log "Now at $(git log -1 --oneline)"
 # `npm ci` and not `npm install`: the lockfile is the contract, and a deploy is
 # the last place to discover that a caret range resolved to something new.
 # Dev dependencies stay — typescript, tailwind and sharp are all build-time.
-log "Installing dependencies"
-npm ci --no-audit --no-fund
+#
+# It is skipped when neither manifest changed, and that is not only about speed.
+# `npm ci` begins by deleting node_modules, and this is the directory the live
+# app is running out of — so every deploy that did not need new dependencies was
+# still taking the site's dependencies away from it for the length of an
+# install. Most deploys here are content and copy changes that touch no manifest
+# at all.
+if [ ! -d node_modules ] || ! git diff --quiet "$PREVIOUS" HEAD -- package.json package-lock.json; then
+  log "Installing dependencies"
+  npm ci --no-audit --no-fund
+else
+  log "Dependencies unchanged — skipping install"
+fi
 
-# `prebuild` regenerates the media, then ~80 pages pre-render against the
-# database. Rolling back on failure keeps the running app on known-good code
-# rather than leaving a half-updated checkout behind.
-log "Building"
-if ! npm run build; then
+# --------------------------------------------------------------------------
+# Build somewhere else, then swap
+#
+# The build used to be written straight into `.next`, which is the directory
+# Passenger is serving from at that moment. `next build` empties it and rewrites
+# it, so for the several minutes that takes on this host, every visitor got
+# prerendered HTML referencing hashed stylesheets that no longer existed — a
+# page with correct markup, no CSS and no JavaScript. It looks like the site has
+# broken, it lasts for the whole build, and it happened on every single deploy.
+#
+# Building into `.next-build` leaves the served directory untouched until there
+# is something complete to put in it. The exposure then is two renames rather
+# than a full build, and a failed build cannot damage the running site at all,
+# because it never reaches it.
+# --------------------------------------------------------------------------
+
+STAGING=".next-build"
+PREVIOUS_BUILD=".next-prev"
+
+rm -rf "$STAGING"
+
+log "Building into $STAGING"
+if ! NEXT_DIST_DIR="$STAGING" npm run build; then
+  rm -rf "$STAGING"
   warn "Build failed — rolling the checkout back to $PREVIOUS"
   git reset --hard "$PREVIOUS"
   npm ci --no-audit --no-fund >/dev/null 2>&1 || true
-  die "Deploy aborted. The previous build is still being served."
+  die "Deploy aborted. The previous build is untouched and still being served."
 fi
 
-log "Restarting"
-if [ -n "${DEPLOY_RESTART_CMD:-}" ]; then
-  eval "$DEPLOY_RESTART_CMD"
-elif command -v pm2 >/dev/null 2>&1 && pm2 describe globify-tech >/dev/null 2>&1; then
-  pm2 reload globify-tech --update-env
-elif [ -d tmp ] || [ -f Passengerfile.json ]; then
-  # Passenger — which is what hPanel's Node.js app manager runs — watches this
-  # file's mtime and restarts on change.
-  mkdir -p tmp && touch tmp/restart.txt
-else
-  warn "No restart mechanism detected. The new build will not be served until
-   the app restarts — do it in hPanel > Advanced > Node.js, or set
-   DEPLOY_RESTART_CMD to the right command for this host."
+# `next build` rewrites tsconfig.json to register the types directory of
+# whichever distDir it used, so building into `.next-build` leaves an edit behind
+# every time. That edit is what would have made this whole change a trap: the
+# preflight above refuses to run against a dirty tree, so the very next poll
+# would have found one and stopped deploying — permanently, and silently, since
+# auto-deploy.sh only writes to a log file. Put the file back.
+git checkout -- tsconfig.json 2>/dev/null || true
+
+# Anything else the build modified is not known to be safe to discard, so it is
+# named rather than reset. A deploy that leaves the tree dirty is the last
+# deploy that will run until someone notices.
+if [ -n "$(git status --porcelain)" ]; then
+  git status --short >&2
+  warn "The build left the working tree dirty (listed above). The next poll will
+   refuse to deploy until this is resolved — deploy.sh will not run against a
+   dirty checkout. Add these paths to .gitignore, or restore them here."
 fi
+
+# `next start` reads distDir from next.config.mjs at runtime, not from the copy
+# recorded inside the build, so a build produced as `.next-build` serves
+# correctly once it is renamed to `.next`. Verified against Next 15.5.
+log "Swapping $STAGING into place"
+rm -rf "$PREVIOUS_BUILD"
+[ -d .next ] && mv .next "$PREVIOUS_BUILD"
+mv "$STAGING" .next
+
+log "Restarting"
+restart_app
 
 # --------------------------------------------------------------------------
 # Verify
@@ -130,16 +193,39 @@ fi
 
 if [ -n "${DEPLOY_SMOKE_URL:-}" ]; then
   log "Smoke-testing $DEPLOY_SMOKE_URL"
+  smoke_ok=0
   for attempt in 1 2 3 4 5 6 7 8 9 10; do
     code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 "$DEPLOY_SMOKE_URL" || true)"
     if [ "$code" = "200" ]; then
       log "OK — $DEPLOY_SMOKE_URL returned 200"
+      smoke_ok=1
       break
     fi
-    [ "$attempt" = "10" ] && die "Still $code after 10 attempts. The app may not have restarted cleanly."
     sleep 3
   done
+
+  # The previous build is still on disk, so a failed smoke test can put it back
+  # rather than leaving a broken site up and a message in a log. Restoring the
+  # build is the fast half; the checkout is reset too so the next poll does not
+  # immediately redeploy the commit that just failed.
+  if [ "$smoke_ok" != "1" ]; then
+    if [ -d "$PREVIOUS_BUILD" ]; then
+      warn "Smoke test failed ($code) — restoring the previous build"
+      rm -rf "$STAGING"
+      mv .next "$STAGING"
+      mv "$PREVIOUS_BUILD" .next
+      rm -rf "$STAGING"
+      git reset --hard "$PREVIOUS"
+      restart_app
+      die "Deploy rolled back to $PREVIOUS. The previous build is being served again."
+    fi
+    die "Still $code after 10 attempts, and there is no previous build to restore.
+   The app may not have restarted cleanly."
+  fi
 fi
+
+# Only now: until the smoke test passed, this was the way back.
+rm -rf "$PREVIOUS_BUILD"
 
 log "Deployed $(git log -1 --oneline)"
 
