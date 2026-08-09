@@ -50,3 +50,7 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
+
+# Written by the deploy-confirm workflow step; also appears here if that step
+# is ever run by hand in the checkout.
+/configured.json
