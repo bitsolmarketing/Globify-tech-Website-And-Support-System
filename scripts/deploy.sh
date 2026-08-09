@@ -2,13 +2,19 @@
 #
 # Deploys the checked-out branch on the machine that serves the site.
 #
-# This runs ON the Hostinger box, not on a CI runner, and that placement is the
-# whole point: `next build` pre-renders ~80 public pages by reading the database,
-# and the database is only reachable as `localhost` from the server itself. A CI
-# runner would connect from an IP that is not in the Remote MySQL allow-list,
-# every read would fall back, and the build would bake the checked-in seed
-# content into every page — a deploy that looks green and quietly publishes
-# placeholder data. Building here is what makes the deployed pages real.
+# This runs ON the Hostinger box, not on a CI runner.
+#
+# That placement used to be load-bearing: the database was MySQL on localhost,
+# reachable from nowhere else unless the connecting IP was in hPanel's Remote
+# MySQL allow-list, so a CI build would have fallen back to seed content and
+# published placeholder data while reporting success.
+#
+# Since the move to Supabase that constraint is gone — the database is reachable
+# from anywhere holding the connection string, so `next build` could now
+# pre-render the ~80 public pages correctly from a CI runner too. Deploying here
+# is now a choice (it is where the app is served from and needs no secrets in a
+# CI provider), not a requirement. Worth knowing before anyone assumes this
+# script cannot be moved.
 #
 # Invoked over SSH by .github/workflows/deploy.yml, and safe to run by hand:
 #

@@ -2,7 +2,7 @@ import 'server-only'
 
 import { randomUUID } from 'node:crypto'
 
-import { and, count, desc, eq, gte, like, or, sql, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, gte, ilike, or, sql, type SQL } from 'drizzle-orm'
 
 import { getDb } from '@/db'
 import {
@@ -25,17 +25,16 @@ export type NewLead = {
 }
 
 /**
- * MySQL has no `RETURNING`, so the row is read back by its generated id.
- * The id is created here rather than by the database, which keeps that a
- * single extra SELECT instead of a round-trip for `LAST_INSERT_ID()`.
+ * The id is generated here rather than by the database so it is known before
+ * the write, and `RETURNING` hands back the stored row — including the
+ * defaults and timestamps the insert did not supply — in the same round trip.
  */
 export async function createLead(input: NewLead): Promise<LeadRow> {
-  const id = randomUUID()
-  const db = getDb()
+  const [row] = await getDb()
+    .insert(leads)
+    .values({ id: randomUUID(), ...input })
+    .returning()
 
-  await db.insert(leads).values({ id, ...input })
-
-  const [row] = await db.select().from(leads).where(eq(leads.id, id)).limit(1)
   return row
 }
 
@@ -74,9 +73,9 @@ export async function upsertChannelLead(input: ChannelLead): Promise<void> {
   const db = getDb()
 
   /* `set` carries only the columns that have a value, so a later message
-     cannot erase what an earlier one established. MySQL's ON DUPLICATE KEY
-     UPDATE is a single round trip and is atomic against the unique index, which
-     matters because webhook deliveries for the same person can overlap. */
+     cannot erase what an earlier one established. `ON CONFLICT … DO UPDATE` is
+     a single round trip and is atomic against the unique index, which matters
+     because webhook deliveries for the same person can overlap. */
   const update: Record<string, unknown> = { updatedAt: sql`now()` }
   if (input.name) update.name = input.name
   if (input.phone) update.phone = input.phone
@@ -102,7 +101,11 @@ export async function upsertChannelLead(input: ChannelLead): Promise<void> {
       source: input.source,
       campaign: input.campaign ?? null,
     })
-    .onDuplicateKeyUpdate({ set: update })
+    /* Targeted at `external_ref` specifically. MySQL's ON DUPLICATE KEY UPDATE
+       fired on whichever unique index happened to be violated; Postgres makes
+       the conflict target explicit, and this is the only one that can collide —
+       `id` is a fresh uuid on every call. */
+    .onConflictDoUpdate({ target: leads.externalRef, set: update })
 }
 
 export type LeadFilters = {
@@ -117,15 +120,19 @@ function buildWhere(filters: LeadFilters): SQL | undefined {
   const clauses: SQL[] = []
 
   if (filters.search) {
-    // `like` is already case-insensitive: every column collates as
-    // utf8mb4_unicode_ci, which is why there is no `ilike` equivalent here.
+    /* `ilike`, not `like`. Under MySQL every column collated as
+       utf8mb4_unicode_ci, so `LIKE` was case-insensitive and the distinction
+       never came up. Postgres compares text exactly, so a plain `LIKE` here
+       would quietly stop matching "Ahmed" when the admin typed "ahmed" — a
+       search box that returns nothing looks like a lead that was never
+       captured, which is the worst way for this to fail. */
     const term = `%${filters.search}%`
     const match = or(
-      like(leads.name, term),
-      like(leads.email, term),
-      like(leads.phone, term),
-      like(leads.handle, term),
-      like(leads.message, term),
+      ilike(leads.name, term),
+      ilike(leads.email, term),
+      ilike(leads.phone, term),
+      ilike(leads.handle, term),
+      ilike(leads.message, term),
     )
     if (match) clauses.push(match)
   }

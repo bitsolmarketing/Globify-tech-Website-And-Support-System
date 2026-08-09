@@ -2,7 +2,7 @@
 
 A production-ready marketing and content site for **Globify Tech Institute, Faisalabad**, built around the **14 August Azadi Sale (50% OFF all courses)** campaign.
 
-Built with **Next.js 15 (App Router)**, **React 19**, **TypeScript (strict)**, **Tailwind CSS v4**, **Framer Motion** and **Radix UI** primitives in the shadcn/ui style. Content is stored in **MariaDB/MySQL** via **Drizzle ORM** and edited through an authenticated admin at `/admin` (**Auth.js**), while the public site stays fully pre-rendered.
+Built with **Next.js 15 (App Router)**, **React 19**, **TypeScript (strict)**, **Tailwind CSS v4**, **Framer Motion** and **Radix UI** primitives in the shadcn/ui style. Content is stored in **Supabase Postgres** via **Drizzle ORM** and edited through an authenticated admin at `/admin` (**Auth.js**), while the public site stays fully pre-rendered.
 
 > **Status:** builds clean, lints clean, typechecks clean. 80 public pages pre-rendered; only `/admin` and the API routes are dynamic. Deployable to Vercel — the public site needs no configuration, the admin needs a database.
 
@@ -94,9 +94,9 @@ All of it is imported into MariaDB by `npm run db:seed` and editable at `/admin`
     ├── auth.ts / auth.config.ts  Auth.js v5 (config half is Edge-safe for middleware)
     ├── middleware.ts             Gates /admin/* only
     ├── db/
-    │   ├── schema.ts             Drizzle tables, typed from the existing TS types
-    │   ├── index.ts              Lazy MySQL/MariaDB connection pool (mysql2)
-    │   └── seed.ts               One-off import of the file content
+    │   ├── schema.ts             Drizzle tables (globify_site schema), typed from the existing TS types
+    │   ├── index.ts              Lazy Postgres connection (postgres-js), Supabase pooler aware
+    │   └── seed.ts               One-off import of the file content into all 19 tables
     ├── components/
     │   ├── ui/                   shadcn-style primitives (button, card, badge, accordion, field, toaster)
     │   ├── admin/                Admin shell, tables, form fields, course/post editors
@@ -237,21 +237,33 @@ inboxes for contact-form leads and newsletter subscribers.
 
 ### 1. Create a database
 
-Any standard MySQL or MariaDB works. The live database is MariaDB 11.8 on
-Hostinger shared hosting, created through hPanel › Databases › MySQL Databases.
+Any Postgres works. The live database is **Supabase** (Postgres 17, `ap-south-1`).
 
-Two things to watch:
+This app's 19 tables live in a dedicated **`globify_site`** schema, not `public`.
+The Supabase project is shared with the AI assistant, whose Prisma schema owns
+`public` — including its own `courses` table, which means the name refers to two
+unrelated things in one database. The separate schema removes that collision,
+and `schemaFilter` in `drizzle.config.ts` scopes drizzle-kit to it so a
+migration can never propose dropping a table this app does not own.
 
-- **Percent-encode the password** in `DATABASE_URL`. A literal `+` must be
-  written `%2B`, or the URI parser reads it as a space and authentication fails.
-- **Connecting from outside the server** — including local development and any
-  build machine — needs the public IP added under hPanel › Databases ›
-  **Remote MySQL**. From the server itself, use `localhost`.
+Three things to watch:
+
+- **Percent-encode the password** in `DATABASE_URL`. A literal `@` must be
+  written `%40`, or the URI parser reads everything after it as the host.
+- **Use a pooler host, not the direct one.** `db.<ref>.supabase.co` publishes
+  only an AAAA record, so it is IPv6-only unless the paid IPv4 add-on is on. On
+  an IPv4-only network it fails as `ENOTFOUND`/`ENETUNREACH`, which reads like a
+  wrong hostname rather than a missing transport.
+- **The pooler username is `postgres.<project-ref>`**, not a bare `postgres`.
+  Getting it wrong reports `Tenant or user not found`, not an auth failure.
 
 ### 2. Fill in the environment
 
 ```bash
-DATABASE_URL=mysql://user:pass@host:3306/db   # required for the admin
+# App — transaction pooler (6543). src/db/index.ts sets prepare:false for it.
+DATABASE_URL=postgresql://postgres.<ref>:pass@aws-0-<region>.pooler.supabase.com:6543/postgres
+# Migrations — session pooler (5432); DDL and advisory locks need a real session.
+DIRECT_URL=postgresql://postgres.<ref>:pass@aws-0-<region>.pooler.supabase.com:5432/postgres
 AUTH_SECRET=…                          # generate with: npx auth secret
 ADMIN_EMAIL=admin@globifytech.com
 ADMIN_PASSWORD=…                       # min 12 chars, bcrypt-hashed at seed time
@@ -401,7 +413,8 @@ META_WHATSAPP_FORWARD_URL               # optional override; defaults to the ass
 META_SOCIAL_FORWARD_URL                 # optional override; defaults to the assistant
 
 # Admin — required for /admin, see "Admin setup" above
-DATABASE_URL                            # any MySQL / MariaDB (password percent-encoded)
+DATABASE_URL                            # Supabase Postgres, pooler host (password percent-encoded)
+DIRECT_URL                              # optional; session pooler, used for migrations
 AUTH_SECRET                             # npx auth secret
 ADMIN_EMAIL                             # read once by `npm run db:seed`
 ADMIN_PASSWORD                          # min 12 chars, bcrypt-hashed before storage
@@ -556,12 +569,18 @@ accepts CI connections.
 
 ### Why the build runs on the server and not in CI
 
-`next build` pre-renders ~80 pages by reading the database, and that database
-only accepts connections from the server itself unless the connecting IP is
-added under hPanel › Databases › **Remote MySQL**. Build on a runner and every
-read is refused, every page silently falls back to the seed content checked into
-`src/lib/*.ts`, and the deploy goes green while publishing placeholders. Building
-where the data is removes the failure mode rather than documenting around it.
+Historically this was forced. `next build` pre-renders ~80 pages by reading the
+database, and the MySQL database only accepted connections from the server
+itself unless the connecting IP was added under hPanel › Databases › **Remote
+MySQL**. Build on a runner and every read was refused, every page silently fell
+back to the seed content in `src/lib/*.ts`, and the deploy went green while
+publishing placeholders.
+
+Supabase removes that constraint — it is reachable from anywhere holding the
+connection string, so a CI runner would now pre-render the real catalogue.
+Building on the server is therefore a preference today rather than a
+requirement: it is where the app is served from, and it keeps the database
+credentials off a third-party CI provider.
 
 ### One-time setup
 
@@ -578,8 +597,9 @@ where the data is removes the failure mode rather than documenting around it.
    ```bash
    git remote set-url origin https://github.com/bitsolmarketing/Globify-tech-Website-And-Support-System.git
    ```
-2. **Create `.env.production.local`** there with the real `DATABASE_URL` (host
-   `localhost`), `AUTH_SECRET`, `NEXT_PUBLIC_SITE_URL` and the admin variables.
+2. **Create `.env.production.local`** there with the real `DATABASE_URL` (the
+   Supabase transaction pooler), `DIRECT_URL` (the session pooler, for
+   migrations), `AUTH_SECRET`, `NEXT_PUBLIC_SITE_URL` and the admin variables.
    It is git-ignored, so it lives only on the server. Substitute every
    placeholder — a templated `DB_HOST`-style value is rejected at startup by
    `describeDatabaseUrl()` precisely because it otherwise reads as "configured".

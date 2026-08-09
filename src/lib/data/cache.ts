@@ -55,6 +55,9 @@ const isBuild = process.env.NEXT_PHASE === 'phase-production-build'
  * about every read at once.
  */
 const CONNECTION_ERROR_CODES = new Set([
+  /* Socket-level, reported by Node rather than the server. `ENETUNREACH` earns
+     its place here: Supabase's direct host is IPv6-only, so an IPv4-only
+     deployment pointed at it fails this way on every single read. */
   'ECONNREFUSED',
   'ECONNRESET',
   'EHOSTUNREACH',
@@ -63,20 +66,45 @@ const CONNECTION_ERROR_CODES = new Set([
   'EPIPE',
   'ETIMEDOUT',
   'EAI_AGAIN',
-  'PROTOCOL_CONNECTION_LOST',
-  'PROTOCOL_SEQUENCE_TIMEOUT',
-  'ER_ACCESS_DENIED_ERROR',
-  'ER_CON_COUNT_ERROR',
-  'ER_BAD_DB_ERROR',
-  'ER_DBACCESS_DENIED_ERROR',
+
+  /* postgres-js's own lifecycle codes for a connection that never opened or
+     was torn down underneath an in-flight query. */
+  'CONNECT_TIMEOUT',
+  'CONNECTION_CLOSED',
+  'CONNECTION_DESTROYED',
+  'CONNECTION_ENDED',
+
+  /* Postgres SQLSTATE class 08 — connection exception, in full. */
+  '08000',
+  '08001',
+  '08003',
+  '08004',
+  '08006',
+
+  /* Class 28 — the credentials are refused. Not a per-query fault: every read
+     will be refused identically until the URL changes. */
+  '28000',
+  '28P01',
+
+  /* The named database does not exist. Same reasoning as above. */
+  '3D000',
+
+  /* 53300 too_many_connections — the tier's ceiling is reached, so backing off
+     is the only thing that helps. 57P01/57P02 are the server shutting down or
+     crashing; 57P03 is "cannot connect now", which is precisely what a paused
+     Supabase project answers while it wakes up. */
+  '53300',
+  '57P01',
+  '57P02',
+  '57P03',
 ])
 
 /**
  * Drizzle rethrows driver failures as its own `Failed query: …` error and hangs
- * the original underneath as `cause`, so the mysql2 code is never on the object
- * actually caught here — it is one or more links down the chain. Walking it is
- * what makes the difference between recognising an outage and mistaking it for
- * a one-off bad query.
+ * the original underneath as `cause`, so the driver's code is never on the
+ * object actually caught here — it is one or more links down the chain. Walking
+ * it is what makes the difference between recognising an outage and mistaking
+ * it for a one-off bad query.
  */
 function isConnectionError(error: unknown): boolean {
   for (let current = error, depth = 0; current && depth < 5; depth++) {

@@ -1,85 +1,119 @@
 /**
- * Drizzle schema for the Globify admin — MariaDB / MySQL.
+ * Drizzle schema for the Globify admin — PostgreSQL (Supabase).
  *
  * The existing TypeScript types stay the source of truth: every nested shape
- * (`curriculum`, `careers`, `faqs`, `social`, …) is a `json` column stamped
+ * (`curriculum`, `careers`, `faqs`, `social`, …) is a `jsonb` column stamped
  * with `.$type<>()` from `@/lib/courses`, `@/lib/authors` and `@/lib/content`.
  * Change the type and the column stops compiling — the two cannot drift.
  *
  * These are type-only imports, so nothing from the seed data files is bundled
  * into drizzle-kit or the server runtime.
  *
- * Column lengths match `drizzle/mysql/0000_init.sql`, which is what actually
- * built the tables on the Hostinger box. MySQL cannot index an unbounded TEXT,
- * so anything indexed or unique is a VARCHAR.
+ * Column lengths are carried over from the MySQL schema this replaced. Postgres
+ * does not need them — it has no index-size limit to design around, and `text`
+ * costs the same as a bounded `varchar` — but they double as the last line of
+ * validation before a value is stored, so they are kept deliberately rather
+ * than widened away.
  */
 import type { Author } from '@/lib/authors'
 import type { GalleryItem, Testimonial } from '@/lib/content'
 import type { Course, CourseCategory } from '@/lib/courses'
 import type { PostFrontmatter } from '@/lib/blog'
 
-import { sql } from 'drizzle-orm'
 import {
   boolean,
-  customType,
   date,
-  datetime,
-  double,
+  doublePrecision,
   index,
-  int,
-  longtext,
-  mysqlTable,
+  integer,
+  jsonb,
+  pgSchema,
+  smallint,
   text,
-  tinyint,
+  timestamp,
   uniqueIndex,
   varchar,
-} from 'drizzle-orm/mysql-core'
+} from 'drizzle-orm/pg-core'
+
+/* ---------------------------------------------------------------------------
+ * Schema
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Every table below lives in `globify_site`, not `public`.
+ *
+ * The Supabase project is shared with the AI assistant, whose Prisma schema
+ * owns `public` — 33 tables including its own `courses`, which means the same
+ * name refers to two unrelated things in one database. Namespacing this app's
+ * tables removes the collision outright, and it also makes the boundary
+ * enforceable rather than conventional: `schemaFilter` in `drizzle.config.ts`
+ * scopes drizzle-kit to this schema, so a migration generated here cannot
+ * propose dropping a table it does not own, however confidently it thinks the
+ * schema has drifted.
+ *
+ * Drizzle qualifies every generated statement with the schema name, so nothing
+ * depends on the connection's `search_path`.
+ */
+export const globifySite = pgSchema('globify_site')
 
 /* ---------------------------------------------------------------------------
  * Shared column helpers
  * ------------------------------------------------------------------------ */
 
-/**
- * MariaDB implements JSON as LONGTEXT + a json_valid() check, so the driver
- * hands back a string where MySQL 8 would hand back a parsed object. Parsing
- * defensively keeps the same column working on both.
- */
-const json = customType<{ data: unknown; driverData: string }>({
-  dataType: () => 'json',
-  toDriver: (value) => JSON.stringify(value),
-  fromDriver: (value) => (typeof value === 'string' ? JSON.parse(value) : value),
-})
-
 /** Row ids are uuids or deterministic `prefix-slug` strings — 100 is ample. */
 const rowId = () => varchar('id', { length: 100 })
 
-const createdAt = datetime('created_at', { mode: 'date' })
+/**
+ * `timestamptz`, not `timestamp`.
+ *
+ * The MySQL schema stored DATETIME and relied on the driver being told
+ * `timezone: 'Z'` to read it back as UTC — an application-level convention that
+ * nothing in the database enforced, so any client that connected without it
+ * silently read every timestamp in local time. Postgres has a type for this:
+ * `timestamptz` stores an absolute instant, and correctness no longer depends
+ * on how the client was configured.
+ */
+const createdAt = timestamp('created_at', { withTimezone: true, mode: 'date' })
   .notNull()
-  .default(sql`CURRENT_TIMESTAMP`)
+  .defaultNow()
 
-/* The tables also carry `ON UPDATE CURRENT_TIMESTAMP`, which covers writes made
-   outside the ORM; `$onUpdateFn` is what keeps Drizzle's own updates in step. */
-const updatedAt = datetime('updated_at', { mode: 'date' })
+/**
+ * Postgres has no `ON UPDATE CURRENT_TIMESTAMP`. The MySQL tables carried it so
+ * that writes made outside the ORM — a psql session, a Supabase table editor
+ * edit — still bumped the column, and `$onUpdateFn` only covers writes Drizzle
+ * itself issues.
+ *
+ * `drizzle/pg/0001_updated_at_triggers.sql` restores the database-side half
+ * with a trigger per table, so both paths keep working.
+ */
+const updatedAt = timestamp('updated_at', { withTimezone: true, mode: 'date' })
   .notNull()
-  .default(sql`CURRENT_TIMESTAMP`)
+  .defaultNow()
   .$onUpdateFn(() => new Date())
 
 /** Preserves the hand-tuned ordering of the original hardcoded arrays. */
-const sortOrder = int('sort_order').notNull().default(0)
+const sortOrder = integer('sort_order').notNull().default(0)
 
 /* ---------------------------------------------------------------------------
  * Auth — a single admin user, seeded from env vars
  * ------------------------------------------------------------------------ */
 
-export const adminUsers = mysqlTable(
+export const adminUsers = globifySite.table(
   'admin_users',
   {
     id: rowId().primaryKey(),
+    /**
+     * Stored lower-cased. MySQL's `utf8mb4_unicode_ci` collation made both the
+     * unique index and every `=` comparison case-insensitive for free; Postgres
+     * compares text exactly, so the normalisation that was implicit in the
+     * collation is now the seed's and `authorize`'s job. Both lower-case before
+     * they touch this column.
+     */
     email: varchar('email', { length: 191 }).notNull(),
     name: varchar('name', { length: 191 }).notNull(),
     /** bcrypt hash — never the plaintext. */
     passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-    lastLoginAt: datetime('last_login_at', { mode: 'date' }),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),
     createdAt,
     updatedAt,
   },
@@ -90,7 +124,7 @@ export const adminUsers = mysqlTable(
  * Courses
  * ------------------------------------------------------------------------ */
 
-export const courses = mysqlTable(
+export const courses = globifySite.table(
   'courses',
   {
     id: rowId().primaryKey(),
@@ -101,29 +135,29 @@ export const courses = mysqlTable(
     tagline: varchar('tagline', { length: 500 }).notNull(),
     /** ~155 chars — used verbatim as the meta description. */
     description: text('description').notNull(),
-    overview: json('overview').$type<string[]>().notNull(),
+    overview: jsonb('overview').$type<string[]>().notNull(),
     image: varchar('image', { length: 500 }).notNull(),
     icon: varchar('icon', { length: 64 }).notNull(),
     duration: varchar('duration', { length: 64 }).notNull(),
-    durationWeeks: int('duration_weeks').notNull(),
-    hoursPerWeek: int('hours_per_week').notNull(),
+    durationWeeks: integer('duration_weeks').notNull(),
+    hoursPerWeek: integer('hours_per_week').notNull(),
     level: varchar('level', { length: 64 }).$type<Course['level']>().notNull(),
-    originalFee: int('original_fee').notNull(),
-    mode: json('mode').$type<string[]>().notNull(),
+    originalFee: integer('original_fee').notNull(),
+    mode: jsonb('mode').$type<string[]>().notNull(),
     language: varchar('language', { length: 64 }).notNull(),
-    skills: json('skills').$type<string[]>().notNull(),
-    tools: json('tools').$type<string[]>().notNull(),
-    outcomes: json('outcomes').$type<string[]>().notNull(),
-    curriculum: json('curriculum').$type<Course['curriculum']>().notNull(),
-    careers: json('careers').$type<Course['careers']>().notNull(),
-    projects: json('projects').$type<string[]>().notNull(),
+    skills: jsonb('skills').$type<string[]>().notNull(),
+    tools: jsonb('tools').$type<string[]>().notNull(),
+    outcomes: jsonb('outcomes').$type<string[]>().notNull(),
+    curriculum: jsonb('curriculum').$type<Course['curriculum']>().notNull(),
+    careers: jsonb('careers').$type<Course['careers']>().notNull(),
+    projects: jsonb('projects').$type<string[]>().notNull(),
     instructorSlug: varchar('instructor_slug', { length: 191 }).notNull(),
-    rating: double('rating').notNull().default(0),
-    reviews: int('reviews').notNull().default(0),
-    enrolled: int('enrolled').notNull().default(0),
+    rating: doublePrecision('rating').notNull().default(0),
+    reviews: integer('reviews').notNull().default(0),
+    enrolled: integer('enrolled').notNull().default(0),
     featured: boolean('featured').notNull().default(false),
     badge: varchar('badge', { length: 64 }).$type<NonNullable<Course['badge']>>(),
-    faqs: json('faqs').$type<Course['faqs']>().notNull(),
+    faqs: jsonb('faqs').$type<Course['faqs']>().notNull(),
     sortOrder,
     createdAt,
     updatedAt,
@@ -140,7 +174,7 @@ export const courses = mysqlTable(
  * Authors / instructors
  * ------------------------------------------------------------------------ */
 
-export const authors = mysqlTable(
+export const authors = globifySite.table(
   'authors',
   {
     id: rowId().primaryKey(),
@@ -149,11 +183,11 @@ export const authors = mysqlTable(
     role: varchar('role', { length: 191 }).notNull(),
     credentials: varchar('credentials', { length: 500 }).notNull(),
     bio: text('bio').notNull(),
-    longBio: json('long_bio').$type<string[]>().notNull(),
+    longBio: jsonb('long_bio').$type<string[]>().notNull(),
     avatar: varchar('avatar', { length: 500 }).notNull(),
-    expertise: json('expertise').$type<string[]>().notNull(),
-    yearsExperience: int('years_experience').notNull(),
-    social: json('social').$type<Author['social']>().notNull(),
+    expertise: jsonb('expertise').$type<string[]>().notNull(),
+    yearsExperience: integer('years_experience').notNull(),
+    social: jsonb('social').$type<Author['social']>().notNull(),
     sortOrder,
     createdAt,
     updatedAt,
@@ -165,7 +199,7 @@ export const authors = mysqlTable(
  * Blog posts — front-matter as columns, MDX body as text
  * ------------------------------------------------------------------------ */
 
-export const posts = mysqlTable(
+export const posts = globifySite.table(
   'posts',
   {
     id: rowId().primaryKey(),
@@ -178,13 +212,13 @@ export const posts = mysqlTable(
     /** Author slug — matches `authors.slug`. */
     author: varchar('author', { length: 191 }).notNull(),
     category: varchar('category', { length: 191 }).notNull(),
-    tags: json('tags').$type<string[]>().notNull(),
+    tags: jsonb('tags').$type<string[]>().notNull(),
     image: varchar('image', { length: 500 }).notNull(),
     imageAlt: varchar('image_alt', { length: 500 }).notNull(),
     featured: boolean('featured').notNull().default(false),
-    faqs: json('faqs').$type<NonNullable<PostFrontmatter['faqs']>>().notNull(),
+    faqs: jsonb('faqs').$type<NonNullable<PostFrontmatter['faqs']>>().notNull(),
     /** Raw markdown body, exactly as it lived under the MDX front-matter. */
-    body: longtext('body').notNull(),
+    body: text('body').notNull(),
     /** Drafts stay out of the public site but remain editable in the admin. */
     published: boolean('published').notNull().default(true),
     createdAt,
@@ -203,7 +237,7 @@ export const posts = mysqlTable(
  * Testimonials
  * ------------------------------------------------------------------------ */
 
-export const testimonials = mysqlTable(
+export const testimonials = globifySite.table(
   'testimonials',
   {
     /** Keeps the original `ts-1` ids from content.ts; new rows get a uuid. */
@@ -214,7 +248,7 @@ export const testimonials = mysqlTable(
     courseSlug: varchar('course_slug', { length: 191 }).notNull(),
     city: varchar('city', { length: 191 }).notNull(),
     avatar: varchar('avatar', { length: 500 }).notNull(),
-    rating: tinyint('rating').$type<Testimonial['rating']>().notNull().default(5),
+    rating: smallint('rating').$type<Testimonial['rating']>().notNull().default(5),
     quote: text('quote').notNull(),
     /** Longer narrative shown on the Success Stories page. */
     story: text('story'),
@@ -234,7 +268,7 @@ export const testimonials = mysqlTable(
  * FAQs
  * ------------------------------------------------------------------------ */
 
-export const faqs = mysqlTable(
+export const faqs = globifySite.table(
   'faqs',
   {
     id: rowId().primaryKey(),
@@ -257,7 +291,7 @@ export const faqs = mysqlTable(
  * Gallery
  * ------------------------------------------------------------------------ */
 
-export const galleryItems = mysqlTable(
+export const galleryItems = globifySite.table(
   'gallery_items',
   {
     id: rowId().primaryKey(),
@@ -265,8 +299,8 @@ export const galleryItems = mysqlTable(
     alt: varchar('alt', { length: 500 }).notNull(),
     caption: varchar('caption', { length: 500 }).notNull(),
     category: varchar('category', { length: 64 }).$type<GalleryItem['category']>().notNull(),
-    width: int('width').notNull(),
-    height: int('height').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
     sortOrder,
     createdAt,
     updatedAt,
@@ -281,9 +315,9 @@ export const galleryItems = mysqlTable(
 /** Two of the six stats are computed from the catalogue rather than typed in. */
 export type StatSource = 'courseCount' | 'averageRating'
 
-export const stats = mysqlTable('stats', {
+export const stats = globifySite.table('stats', {
   id: rowId().primaryKey(),
-  value: double('value').notNull(),
+  value: doublePrecision('value').notNull(),
   suffix: varchar('suffix', { length: 16 }).notNull().default(''),
   label: varchar('label', { length: 191 }).notNull(),
   description: varchar('description', { length: 500 }).notNull(),
@@ -295,7 +329,7 @@ export const stats = mysqlTable('stats', {
   updatedAt,
 })
 
-export const benefits = mysqlTable('benefits', {
+export const benefits = globifySite.table('benefits', {
   id: rowId().primaryKey(),
   title: varchar('title', { length: 255 }).notNull(),
   description: text('description').notNull(),
@@ -305,7 +339,7 @@ export const benefits = mysqlTable('benefits', {
   updatedAt,
 })
 
-export const milestones = mysqlTable('milestones', {
+export const milestones = globifySite.table('milestones', {
   id: rowId().primaryKey(),
   year: varchar('year', { length: 16 }).notNull(),
   title: varchar('title', { length: 255 }).notNull(),
@@ -319,7 +353,7 @@ export const milestones = mysqlTable('milestones', {
  * Why Choose Us — differentiators and the hero trust strip
  * ------------------------------------------------------------------------ */
 
-export const differentiators = mysqlTable('differentiators', {
+export const differentiators = globifySite.table('differentiators', {
   id: rowId().primaryKey(),
   title: varchar('title', { length: 255 }).notNull(),
   body: text('body').notNull(),
@@ -330,7 +364,7 @@ export const differentiators = mysqlTable('differentiators', {
   updatedAt,
 })
 
-export const trustBadges = mysqlTable('trust_badges', {
+export const trustBadges = globifySite.table('trust_badges', {
   id: rowId().primaryKey(),
   label: varchar('label', { length: 191 }).notNull(),
   icon: varchar('icon', { length: 64 }).notNull(),
@@ -343,7 +377,7 @@ export const trustBadges = mysqlTable('trust_badges', {
  * Course categories — the catalogue filter tabs and mega-menu headings
  * ------------------------------------------------------------------------ */
 
-export const courseCategories = mysqlTable(
+export const courseCategories = globifySite.table(
   'course_categories',
   {
     id: rowId().primaryKey(),
@@ -364,7 +398,7 @@ export const courseCategories = mysqlTable(
 export type OpeningHour = { days: string; time: string }
 export type OpeningHoursSpec = { days: string[]; opens: string; closes: string }
 
-export const siteSettings = mysqlTable('site_settings', {
+export const siteSettings = globifySite.table('site_settings', {
   id: rowId().primaryKey(),
   name: varchar('name', { length: 191 }).notNull(),
   shortName: varchar('short_name', { length: 191 }).notNull(),
@@ -373,7 +407,7 @@ export const siteSettings = mysqlTable('site_settings', {
   description: text('description').notNull(),
   founded: varchar('founded', { length: 16 }).notNull(),
   logo: varchar('logo', { length: 500 }).notNull(),
-  keywords: json('keywords').$type<string[]>().notNull(),
+  keywords: jsonb('keywords').$type<string[]>().notNull(),
   /** Admission counsellor — backs every plain `tel:` link on the site. */
   phone: varchar('phone', { length: 64 }).notNull(),
   phoneHref: varchar('phone_href', { length: 64 }).notNull(),
@@ -391,17 +425,17 @@ export const siteSettings = mysqlTable('site_settings', {
   addressPostalCode: varchar('address_postal_code', { length: 32 }).notNull(),
   addressCountry: varchar('address_country', { length: 8 }).notNull(),
   addressCountryName: varchar('address_country_name', { length: 128 }).notNull(),
-  latitude: double('latitude').notNull(),
-  longitude: double('longitude').notNull(),
+  latitude: doublePrecision('latitude').notNull(),
+  longitude: doublePrecision('longitude').notNull(),
   mapEmbedUrl: varchar('map_embed_url', { length: 1000 }).notNull(),
   /** Google Business Profile — every "find us" link points here. */
   officeUrl: varchar('office_url', { length: 1000 }).notNull(),
-  openingHours: json('opening_hours').$type<OpeningHour[]>().notNull(),
-  openingHoursSpec: json('opening_hours_spec').$type<OpeningHoursSpec>().notNull(),
+  openingHours: jsonb('opening_hours').$type<OpeningHour[]>().notNull(),
+  openingHoursSpec: jsonb('opening_hours_spec').$type<OpeningHoursSpec>().notNull(),
   updatedAt,
 })
 
-export const socialLinks = mysqlTable('social_links', {
+export const socialLinks = globifySite.table('social_links', {
   id: rowId().primaryKey(),
   name: varchar('name', { length: 64 }).notNull(),
   href: varchar('href', { length: 500 }).notNull(),
@@ -427,7 +461,7 @@ export const NAV_LOCATIONS = [
 ] as const
 export type NavLocation = (typeof NAV_LOCATIONS)[number]
 
-export const navLinks = mysqlTable(
+export const navLinks = globifySite.table(
   'nav_links',
   {
     id: rowId().primaryKey(),
@@ -453,22 +487,22 @@ export const navLinks = mysqlTable(
  * Campaign settings — a single row, id 'default'
  * ------------------------------------------------------------------------ */
 
-export const campaignSettings = mysqlTable('campaign_settings', {
+export const campaignSettings = globifySite.table('campaign_settings', {
   id: rowId().primaryKey(),
   name: varchar('name', { length: 191 }).notNull(),
   emoji: varchar('emoji', { length: 32 }).notNull(),
-  discountPercent: int('discount_percent').notNull(),
+  discountPercent: integer('discount_percent').notNull(),
   headline: varchar('headline', { length: 500 }).notNull(),
   subheadline: text('subheadline').notNull(),
   couponCode: varchar('coupon_code', { length: 64 }).notNull(),
   timezoneOffset: varchar('timezone_offset', { length: 16 }).notNull(),
-  seatsTotal: int('seats_total').notNull(),
-  seatsRemaining: int('seats_remaining').notNull(),
+  seatsTotal: integer('seats_total').notNull(),
+  seatsRemaining: integer('seats_remaining').notNull(),
   /**
    * Explicit deadline. When null the site falls back to the rolling
    * "14 August 23:59:59 PKT of the current campaign year" rule.
    */
-  deadline: datetime('deadline', { mode: 'date' }),
+  deadline: timestamp('deadline', { withTimezone: true, mode: 'date' }),
   updatedAt,
 })
 
@@ -510,7 +544,7 @@ export type LeadChannel = (typeof LEAD_CHANNELS)[number]
  * `courseSlug` stays required because "not sure yet" is a real answer the form
  * already offers, so there is an honest value to default to.
  */
-export const leads = mysqlTable(
+export const leads = globifySite.table(
   'leads',
   {
     id: rowId().primaryKey(),
@@ -535,7 +569,9 @@ export const leads = mysqlTable(
      * The sending system's own id for this enquiry — a WhatsApp contact, an
      * assistant conversation reference. Unique, so a webhook redelivery or a
      * second message from the same person updates the lead instead of adding
-     * another one. Null for anything with no upstream identity.
+     * another one. Null for anything with no upstream identity, and Postgres —
+     * like MySQL before it — treats each NULL as distinct, so any number of
+     * form submissions coexist under the same unique index.
      */
     externalRef: varchar('external_ref', { length: 191 }),
     campaign: varchar('campaign', { length: 191 }),
@@ -561,7 +597,7 @@ export const leads = mysqlTable(
 export const SUBSCRIBER_STATUSES = ['subscribed', 'unsubscribed'] as const
 export type SubscriberStatus = (typeof SUBSCRIBER_STATUSES)[number]
 
-export const newsletterSubscribers = mysqlTable(
+export const newsletterSubscribers = globifySite.table(
   'newsletter_subscribers',
   {
     id: rowId().primaryKey(),

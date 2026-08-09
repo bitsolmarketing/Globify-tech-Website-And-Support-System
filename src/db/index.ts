@@ -1,5 +1,5 @@
 /**
- * MariaDB / MySQL connection.
+ * PostgreSQL connection — Supabase.
  *
  * Deliberately free of `server-only` so the seed script and drizzle-kit can
  * import it from a plain Node process. The data layer in `src/lib/data/` is
@@ -10,24 +10,24 @@
  * this module already initialised with an empty value.
  */
 import { sql } from 'drizzle-orm'
-import { drizzle, type MySql2Database } from 'drizzle-orm/mysql2'
-import mysql from 'mysql2/promise'
+import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js'
+import postgres from 'postgres'
 
 import * as schema from './schema'
 
-export type Database = MySql2Database<typeof schema>
+export type Database = PostgresJsDatabase<typeof schema>
 
 export function databaseUrl(): string {
   return process.env.DATABASE_URL?.trim() ?? ''
 }
 
 /**
- * `.env.production.local` ships with `mysql://DB_USER:DB_PASSWORD@DB_HOST:3306/DB_NAME`
- * as a fill-in-the-blanks template. A non-empty placeholder is far worse than a
- * blank: it reads as "configured", so every request tries to reach a host that
- * cannot resolve and blocks for the full connect timeout before falling back.
+ * `.env.production.local` ships with a fill-in-the-blanks template. A non-empty
+ * placeholder is far worse than a blank: it reads as "configured", so every
+ * request tries to reach a host that cannot resolve and blocks for the full
+ * connect timeout before falling back.
  *
- * Real hostnames and MySQL usernames are effectively never SHOUT_CASE, so that
+ * Real hostnames and Postgres roles are effectively never SHOUT_CASE, so that
  * shape is a reliable marker for an unsubstituted template variable.
  */
 const PLACEHOLDER = /^[A-Z][A-Z0-9_]*$/
@@ -56,8 +56,11 @@ export function describeDatabaseUrl(): { ok: true } | { ok: false; reason: strin
     return { ok: false, reason: 'DATABASE_URL is not a valid connection URL' }
   }
 
-  if (!/^(mysql|mariadb):$/.test(parsed.protocol)) {
-    return { ok: false, reason: `DATABASE_URL must start with mysql:// (got "${parsed.protocol}//")` }
+  if (!/^(postgres|postgresql):$/.test(parsed.protocol)) {
+    return {
+      ok: false,
+      reason: `DATABASE_URL must start with postgresql:// (got "${parsed.protocol}//")`,
+    }
   }
 
   const templated = (
@@ -84,45 +87,49 @@ export function describeDatabaseUrl(): { ok: true } | { ok: false; reason: strin
 }
 
 /* Re-used across HMR reloads and across lambda invocations — creating a new
-   pool per request exhausts MySQL's connection limit very quickly. Shared
-   hosting caps concurrent connections aggressively, so keep `connectionLimit`
-   low. */
+   pool per request exhausts the connection limit very quickly. */
 const globalForDb = globalThis as unknown as {
-  __globifyPool?: mysql.Pool
+  __globifyClient?: postgres.Sql
   __globifyDb?: Database
 }
 
-function createPool(url: string): mysql.Pool {
-  return mysql.createPool({
-    uri: url,
-    connectionLimit: 5,
-    waitForConnections: true,
+/**
+ * Supabase's transaction pooler (port 6543) hands a different backend to every
+ * statement, so a `PREPARE` issued on one connection is not there when the
+ * `EXECUTE` lands on another — the failure surfaces much later as
+ * "prepared statement \"s1\" does not exist" under concurrency, not at startup.
+ *
+ * Session mode (5432) and a direct connection both keep one backend for the
+ * life of the connection, so they keep the prepared-statement cache.
+ */
+function usesTransactionPooler(url: URL): boolean {
+  return url.port === '6543'
+}
+
+function createClient(url: string): postgres.Sql {
+  const parsed = new URL(url)
+
+  return postgres(url, {
+    /* Shared hosting and Supabase's free tier both cap connections aggressively,
+       and the pooler in front of this multiplexes anyway, so a small ceiling
+       here costs nothing and keeps one instance from monopolising the tier. */
+    max: 5,
+    prepare: !usesTransactionPooler(parsed),
+    /* Supabase terminates TLS at the pooler and presents a certificate for
+       *.pooler.supabase.com signed by a root Node does not ship, so full
+       verification fails against a connection that is nonetheless encrypted.
+       `require` is the same guarantee libpq's sslmode=require gives. */
+    ssl: 'require',
+    // Lets `next build` and the seed script exit instead of hanging on a socket.
+    idle_timeout: 20,
     /*
-     * An unbounded queue is what turns a database outage into a 504. Five
-     * connections each stuck on a connect attempt means waiters are served in
-     * timeout-length batches, so the twentieth queued request only finds out it
-     * failed after four full timeouts — by which point the proxy in front of
-     * Node has already given up. Bounding the queue makes the overflow fail
-     * immediately with ER_CON_COUNT_ERROR, which trips the breaker in
-     * `lib/data/cache.ts` and gets everyone onto the seed-data path.
+     * Anything approaching this bound is an outage, not slowness, and waiting
+     * longer only delays the seed-data fallback in `lib/data/cache.ts`.
      */
-    queueLimit: 10,
-    // Lets `next build` exit cleanly instead of hanging on an open socket.
-    idleTimeout: 20_000,
-    /*
-     * The app and MySQL sit on the same Hostinger box, so a healthy connect is
-     * single-digit milliseconds. Anything approaching this bound is an outage,
-     * not slowness, and waiting longer only delays the fallback.
-     */
-    connectTimeout: 5_000,
-    // Reconnects are the expensive part on shared hosting; keep sockets warm.
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 10_000,
-    // DATETIME columns are stored as UTC; returning strings would break the
-    // Date-typed schema columns, so let mysql2 hydrate them.
-    timezone: 'Z',
-    charset: 'utf8mb4_unicode_ci',
-    supportBigNumbers: true,
+    connect_timeout: 10,
+    /* The pooler emits notices on connect that carry no information the app can
+       act on; left unhandled they print on every cold start. */
+    onnotice: () => {},
   })
 }
 
@@ -131,16 +138,14 @@ export function getDb(): Database {
   const check = describeDatabaseUrl()
 
   if (!check.ok) {
-    throw new Error(
-      `${check.reason}. The admin requires a MySQL/MariaDB database — see README › Admin setup.`,
-    )
+    throw new Error(`${check.reason}. The admin requires a Postgres database — see README › Admin setup.`)
   }
 
   const url = databaseUrl()
 
   if (!globalForDb.__globifyDb) {
-    globalForDb.__globifyPool = globalForDb.__globifyPool ?? createPool(url)
-    globalForDb.__globifyDb = drizzle(globalForDb.__globifyPool, { schema, mode: 'default' })
+    globalForDb.__globifyClient = globalForDb.__globifyClient ?? createClient(url)
+    globalForDb.__globifyDb = drizzle(globalForDb.__globifyClient, { schema })
   }
 
   return globalForDb.__globifyDb
@@ -149,6 +154,44 @@ export function getDb(): Database {
 /** Returns null instead of throwing — use on public pages that can fall back. */
 export function tryGetDb(): Database | null {
   return isDatabaseConfigured() ? getDb() : null
+}
+
+/**
+ * The driver error code, however deeply it has been wrapped.
+ *
+ * Drizzle wraps every query error in a `DrizzleQueryError` and hangs the real
+ * one off `cause`, so reading `error.code` directly found nothing and sent
+ * every single failure to the default branch below — access denied, missing
+ * database, connection refused and timed out all reported as the same
+ * uninformative "could not reach the database". That is the exact conflation
+ * this function was written to remove, reintroduced one level down.
+ */
+function errorCode(error: unknown): string {
+  let current: unknown = error
+
+  // Bounded: `cause` chains can be circular, and no real one is this deep.
+  for (let depth = 0; depth < 5; depth++) {
+    if (typeof current !== 'object' || current === null) return ''
+    const code = (current as { code?: unknown }).code
+    if (typeof code === 'string' && code) return code
+    current = (current as { cause?: unknown }).cause
+  }
+
+  return ''
+}
+
+/** The driver error message, for the cases where the code alone is ambiguous. */
+function errorMessage(error: unknown): string {
+  let current: unknown = error
+
+  for (let depth = 0; depth < 5; depth++) {
+    if (typeof current !== 'object' || current === null) return ''
+    const message = (current as { message?: unknown }).message
+    if (typeof message === 'string' && message) return message
+    current = (current as { cause?: unknown }).cause
+  }
+
+  return ''
 }
 
 /**
@@ -168,38 +211,61 @@ export async function pingDatabase(): Promise<{ ok: true } | { ok: false; reason
     await getDb().execute(sql`select 1`)
     return { ok: true }
   } catch (error) {
-    const code =
-      typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string'
-        ? (error as { code: string }).code
-        : ''
-
+    const code = errorCode(error)
     const host = new URL(databaseUrl()).host
 
     switch (code) {
-      case 'ER_ACCESS_DENIED_ERROR':
-        return { ok: false, reason: `MySQL rejected the credentials in DATABASE_URL (host ${host})` }
-      case 'ER_BAD_DB_ERROR':
+      // 28P01 invalid_password, 28000 invalid_authorization_specification.
+      case '28P01':
+      case '28000':
+        return { ok: false, reason: `Postgres rejected the credentials in DATABASE_URL (host ${host})` }
+      // 3D000 invalid_catalog_name.
+      case '3D000':
         return { ok: false, reason: `The database named in DATABASE_URL does not exist on ${host}` }
+      // 53300 too_many_connections.
+      case '53300':
+        return { ok: false, reason: `${host} has no connection slots left — use the transaction pooler (port 6543)` }
       case 'ENOTFOUND':
       case 'EAI_AGAIN':
         return { ok: false, reason: `The host in DATABASE_URL does not resolve (${host})` }
+      case 'ENETUNREACH':
+        /* Supabase's direct host (db.<ref>.supabase.co) is IPv6-only. On an
+           IPv4-only network it resolves and then cannot be reached, which looks
+           nothing like a transport problem unless it is named. */
+        return {
+          ok: false,
+          reason: `No route to ${host} — if this is db.*.supabase.co it is IPv6-only; use the pooler host instead`,
+        }
       case 'ECONNREFUSED':
-        return { ok: false, reason: `Nothing is listening for MySQL on ${host}` }
+        return { ok: false, reason: `Nothing is listening for Postgres on ${host}` }
       case 'ETIMEDOUT':
-        return { ok: false, reason: `Timed out connecting to ${host} — check the firewall / Remote MySQL allow-list` }
-      default:
+      case 'CONNECT_TIMEOUT':
+        return { ok: false, reason: `Timed out connecting to ${host}` }
+      default: {
+        /* Supavisor reports an unknown tenant as a generic XX000, so the
+           username is the only thing that distinguishes "this project does not
+           exist here" from a genuine internal error. The pooler expects
+           `postgres.<project-ref>`; a bare `postgres` lands here every time. */
+        if (/tenant or user not found/i.test(errorMessage(error))) {
+          return {
+            ok: false,
+            reason: `${host} does not know this project — the pooler username must be "postgres.<project-ref>", and the host region must match`,
+          }
+        }
+
         return {
           ok: false,
           reason: `Could not reach the database at ${host}${code ? ` (${code})` : ''}`,
         }
+      }
     }
   }
 }
 
 /** Seed/migration scripts call this so the Node process can exit. */
 export async function closeDb(): Promise<void> {
-  await globalForDb.__globifyPool?.end()
-  globalForDb.__globifyPool = undefined
+  await globalForDb.__globifyClient?.end({ timeout: 5 })
+  globalForDb.__globifyClient = undefined
   globalForDb.__globifyDb = undefined
 }
 
