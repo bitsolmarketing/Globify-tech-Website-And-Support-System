@@ -23,7 +23,32 @@
 set -euo pipefail
 
 BRANCH="${DEPLOY_BRANCH:-main}"
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_DIR="${DEPLOY_APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# --------------------------------------------------------------------------
+# Run from a copy of this file
+#
+# `git reset --hard` below rewrites the checkout — including this script, on any
+# deploy that changes it. Bash does not read a script all at once; it parses as
+# it goes and seeks by byte offset, so replacing the file underneath a running
+# shell resumes at that offset in the *new* contents and executes whatever
+# fragment happens to start there. It is silent when the two versions are the
+# same length and arbitrary when they are not, which makes it the kind of fault
+# that appears once, in production, on the deploy that changed the deploy
+# script.
+#
+# Copying to a temporary file first makes the running script immutable for the
+# length of the run. The new version takes effect on the next deploy, which is
+# the behaviour you would expect anyway.
+# --------------------------------------------------------------------------
+if [ "${DEPLOY_REEXEC:-0}" != "1" ]; then
+  self_copy="$(mktemp -t globify-deploy.XXXXXX)"
+  cat "${BASH_SOURCE[0]}" > "$self_copy"
+  trap 'rm -f "$self_copy"' EXIT
+  DEPLOY_REEXEC=1 DEPLOY_APP_DIR="$APP_DIR" bash "$self_copy" "$@"
+  exit $?
+fi
+
 cd "$APP_DIR"
 
 log()  { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
