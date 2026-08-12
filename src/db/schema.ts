@@ -615,6 +615,86 @@ export const newsletterSubscribers = globifySite.table(
 )
 
 /* ---------------------------------------------------------------------------
+ * Assistant conversations
+ *
+ * The chatbot answers WhatsApp, Instagram and Messenger from this application,
+ * so its threads live here rather than in a second service with a second
+ * database and a second admin login.
+ *
+ * Only two tables, deliberately. A thread and its messages are all that is
+ * needed to answer, to show a transcript in the admin, and to hand a
+ * conversation to a person. Everything an enquiry turns into — a name, a
+ * course, a callback request — belongs on `leads`, which already exists and is
+ * already the admissions team's inbox.
+ * ------------------------------------------------------------------------ */
+
+export const BOT_CHANNELS = ['whatsapp', 'instagram', 'messenger', 'web'] as const
+export type BotChannel = (typeof BOT_CHANNELS)[number]
+
+export const BOT_LANGUAGES = ['en', 'ur', 'ur_roman', 'pa'] as const
+export type BotLanguage = (typeof BOT_LANGUAGES)[number]
+
+export const conversations = globifySite.table(
+  'conversations',
+  {
+    id: rowId().primaryKey(),
+    /** Human-quotable reference shown in the admin, e.g. `WA-CONV-8F2K1D`. */
+    reference: varchar('reference', { length: 64 }).notNull(),
+    channel: varchar('channel', { length: 32 }).$type<BotChannel>().notNull(),
+    /** WhatsApp only — a real, dialable number in display form. */
+    contactPhone: varchar('contact_phone', { length: 64 }),
+    /**
+     * Instagram and Messenger identify a person by an app-scoped id (IGSID or
+     * PSID) that means nothing outside the inbox it came from. It gets its own
+     * column rather than borrowing `contactPhone`, because an id that cannot be
+     * dialled must never sit in a field the team reads as a number to call.
+     */
+    contactHandle: varchar('contact_handle', { length: 191 }),
+    contactName: varchar('contact_name', { length: 191 }),
+    language: varchar('language', { length: 16 }).$type<BotLanguage>().notNull().default('en'),
+    /**
+     * In-progress slot filling for channels that have no forms:
+     * `{ flow, step, answers, startedAt }`. Resumed on every delivery, because
+     * a webhook is a cold start and the step index cannot live in memory.
+     */
+    capture: jsonb('capture').$type<Record<string, unknown> | null>(),
+    /** Set when a person takes over; the bot then stays quiet on this thread. */
+    handedOff: boolean('handed_off').notNull().default(false),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('conversations_reference_key').on(table.reference),
+    index('conversations_channel_phone_idx').on(table.channel, table.contactPhone),
+    index('conversations_channel_handle_idx').on(table.channel, table.contactHandle),
+    index('conversations_updated_at_idx').on(table.updatedAt),
+  ],
+)
+
+export const conversationMessages = globifySite.table(
+  'conversation_messages',
+  {
+    id: rowId().primaryKey(),
+    conversationId: varchar('conversation_id', { length: 100 }).notNull(),
+    role: varchar('role', { length: 16 }).$type<'user' | 'assistant'>().notNull(),
+    content: text('content').notNull(),
+    language: varchar('language', { length: 16 }).$type<BotLanguage>(),
+    /**
+     * Meta's own id for the message. Unique, and it is the whole reason a
+     * webhook redelivery cannot make the bot answer the same person twice:
+     * the second insert violates this index and the handler stops there.
+     * Null for outbound messages a send never returned an id for.
+     */
+    externalId: varchar('external_id', { length: 191 }),
+    createdAt,
+  },
+  (table) => [
+    index('conversation_messages_conversation_idx').on(table.conversationId, table.createdAt),
+    uniqueIndex('conversation_messages_external_id_key').on(table.externalId),
+  ],
+)
+
+/* ---------------------------------------------------------------------------
  * Inferred row types — used across the data layer and admin server actions
  * ------------------------------------------------------------------------ */
 
@@ -636,5 +716,7 @@ export type SocialLinkRow = typeof socialLinks.$inferSelect
 export type NavLinkRow = typeof navLinks.$inferSelect
 export type CampaignRow = typeof campaignSettings.$inferSelect
 export type LeadRow = typeof leads.$inferSelect
+export type ConversationRow = typeof conversations.$inferSelect
+export type ConversationMessageRow = typeof conversationMessages.$inferSelect
 export type SubscriberRow = typeof newsletterSubscribers.$inferSelect
 export type AdminUserRow = typeof adminUsers.$inferSelect

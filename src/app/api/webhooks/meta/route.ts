@@ -1,18 +1,13 @@
 import type { NextRequest } from 'next/server'
 
-import { isDatabaseConfigured } from '@/db'
-import { upsertChannelLead } from '@/lib/data/leads'
+import { handleInbound } from '@/lib/bot/handler'
 import {
   channelFor,
-  countWhatsAppMessages,
   metaConfig,
   normaliseMessagingEvents,
   normaliseWhatsAppMessages,
   parseWebhookBody,
-  signPayload,
   verifyMetaSignature,
-  type MetaChannel,
-  type MetaInboundMessage,
 } from '@/lib/meta'
 
 export const runtime = 'nodejs'
@@ -35,25 +30,27 @@ export const dynamic = 'force-dynamic'
  *  Use the same verify token (`META_VERIFY_TOKEN`) for all three; the app
  *  secret (`META_APP_SECRET`) is shared by definition.
  *
- *  This endpoint is the front door, not the brain. It verifies, routes and
- *  hands off to the AI assistant, which owns the conversation state, the
- *  knowledge base and the outbound Graph API calls.
+ *  This endpoint is the front door AND the brain. It verifies the signature,
+ *  works out which product a delivery came from, and hands each message to
+ *  `lib/bot/handler`, which answers it here — reading the catalogue and FAQs
+ *  from the same tables the admin edits, and writing enquiries into the same
+ *  `leads` inbox as the contact form.
  *
- *  Three rules govern everything below:
+ *  It used to relay instead, to a separate assistant on its own subdomain with
+ *  its own database and its own login. That meant two deployments, two copies
+ *  of the course list that could disagree, and a bot that went silent whenever
+ *  the second service was down. Answering inline removes all three.
+ *
+ *  Two rules govern everything below:
  *
  *   1. **Never trust the caller.** The URL is public, so an unsigned or
  *      wrongly-signed POST is rejected before the body is parsed.
  *
- *   2. **Only ask for a retry when a retry could help.** Meta redelivers on
- *      any non-2xx. A downstream 4xx means "there is no handler for this" —
- *      redelivering it forever achieves nothing and, after enough failures,
- *      Meta disables the subscription for *every* product on the app. So a
- *      permanent downstream failure is logged and acknowledged; only a
- *      transient one (network error, 5xx) asks for the retry.
- *
- *   3. **The relay is what must not be lost.** The assistant deduplicates by
- *      message id, so a redelivery cannot make it answer a customer twice.
- *      That is what makes rule 2 safe to lean on.
+ *   2. **Always answer 200.** Meta redelivers on anything else, and a
+ *      redelivery of a message already answered would message the student
+ *      twice. The handler deduplicates on Meta's message id, so the retries
+ *      that do happen are harmless — but there is no reason to invite them.
+ *      Processing failures are logged and swallowed.
  * =============================================================================
  */
 
@@ -114,175 +111,37 @@ export async function POST(request: NextRequest) {
     return new Response('OK', { status: 200 })
   }
 
-  const outcome =
+  const messages =
     channel === 'whatsapp'
-      ? await relayWhatsApp(raw, signature, body, config)
-      : await relaySocial(body, channel, config)
+      ? normaliseWhatsAppMessages(body)
+      : normaliseMessagingEvents(body, channel)
 
-  /* 502 is the only status here that is not 200, and it exists purely to ask
-     Meta to try again — see rule 2 above. */
-  return outcome.retry
-    ? new Response('Upstream unavailable', { status: 502 })
-    : new Response('OK', { status: 200 })
-}
-
-type Outcome = { retry: boolean }
-
-/**
- * Record inbound messages as leads in the admin inbox.
- *
- * This webhook already sees every message from every Meta channel on its way to
- * the assistant, which makes it the one place that can put WhatsApp, Messenger
- * and Instagram enquiries in front of the admissions team — today, without
- * waiting for the assistant to be deployed.
- *
- * Deliberately best-effort and never rethrown. Meta's retry behaviour must be
- * decided by whether the *relay* succeeded and nothing else: a database that is
- * down should cost a row in the inbox, not a redelivered customer message.
- */
-async function captureLeads(channel: MetaChannel, messages: MetaInboundMessage[]): Promise<void> {
-  if (!isDatabaseConfigured() || messages.length === 0) return
-
+  /* Answer here, in this application.
+   *
+   * This used to relay every delivery to a separate assistant service on its
+   * own subdomain, with its own database and its own admin login. It now
+   * answers inline: one deployment, one database, and a catalogue the bot reads
+   * from the same tables the admin edits — so publishing a course change no
+   * longer means remembering to update a second copy of it somewhere else.
+   *
+   * Sequential, not parallel. Two messages from one person are one
+   * conversation, and answering them concurrently races on the capture state:
+   * both would read the same step and ask the same question twice. */
   for (const message of messages) {
-    try {
-      await upsertChannelLead({
-        channel,
-        /* One lead per person, not per message. Keying on the sender means the
-           second message and the twentieth land on the row the first created,
-           which is what keeps a busy conversation from filling the inbox. */
-        externalRef: `${channel}:${message.senderId}`,
-        handle: message.senderId,
-        name: message.profileName ?? null,
-        /* On WhatsApp the sender id *is* the phone number, so admissions can
-           ring them back. Messenger and Instagram give only a scoped id that
-           means nothing outside the inbox it came from. */
-        phone: channel === 'whatsapp' ? `+${message.senderId.replace(/\D/g, '')}` : null,
-        message: message.text || null,
-        source: `${channel}-webhook`,
-      })
-    } catch (error) {
-      console.error(`[meta] could not record a ${channel} lead:`, error)
-    }
-  }
-}
-
-/**
- * WhatsApp is relayed byte for byte, with Meta's own signature header intact.
- *
- * The assistant already runs a complete WhatsApp handler that verifies the
- * signature itself, and the same app secret over the same bytes produces the
- * same HMAC — so forwarding the original request unchanged means it verifies
- * there exactly as it would have if Meta had called it directly. Nothing has to
- * be re-signed, and nothing downstream has to learn to trust this host.
- */
-async function relayWhatsApp(
-  raw: string,
-  signature: string | null,
-  body: ReturnType<typeof parseWebhookBody>,
-  config: ReturnType<typeof metaConfig>,
-): Promise<Outcome> {
-  const count = body ? countWhatsAppMessages(body) : 0
-
-  if (body) await captureLeads('whatsapp', normaliseWhatsAppMessages(body))
-
-  if (!config.whatsappForwardUrl) {
-    console.error(
-      `[meta] whatsapp delivery with ${count} message(s) dropped — neither AI_ASSISTANT_URL nor META_WHATSAPP_FORWARD_URL is set.`,
-    )
-    return { retry: false }
-  }
-
-  return deliver(config.whatsappForwardUrl, raw, signature ?? '', 'whatsapp', count)
-}
-
-/**
- * Messenger and Instagram arrive in a shape the assistant's WhatsApp handler
- * cannot read, so they are normalised here and posted to a channel-agnostic
- * endpoint, signed with the same scheme Meta uses so the receiver can verify it
- * with the code it already has.
- */
-async function relaySocial(
-  body: NonNullable<ReturnType<typeof parseWebhookBody>>,
-  channel: MetaChannel,
-  config: ReturnType<typeof metaConfig>,
-): Promise<Outcome> {
-  const messages = normaliseMessagingEvents(body, channel)
-
-  /* Instagram also delivers comments and mentions through `changes` rather than
-     `messaging`. Those are not conversations and there is nothing to answer, so
-     they are acknowledged and left alone. */
-  if (messages.length === 0) return { retry: false }
-
-  await captureLeads(channel, messages)
-
-  if (!config.socialForwardUrl) {
-    console.error(
-      `[meta] ${channel} delivery with ${messages.length} message(s) dropped — neither AI_ASSISTANT_URL nor META_SOCIAL_FORWARD_URL is set.`,
-    )
-    return { retry: false }
-  }
-
-  const payload = JSON.stringify({ channel, messages })
-  return deliver(
-    config.socialForwardUrl,
-    payload,
-    signPayload(payload, config.appSecret),
-    channel,
-    messages.length,
-  )
-}
-
-/**
- * POST to the assistant and decide, from what came back, whether Meta should be
- * asked to redeliver.
- *
- * The eight-second cap is deliberate: Meta's own delivery attempt times out at
- * around ten, and holding this request past that gains nothing — Meta has
- * already given up and queued a retry by then, which the deduplication
- * downstream makes harmless.
- */
-async function deliver(
-  url: string,
-  payload: string,
-  signature: string,
-  channel: MetaChannel,
-  count: number,
-): Promise<Outcome> {
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Hub-Signature-256': signature,
-        'X-Globify-Relay': 'globifytech.com',
-        'X-Globify-Channel': channel,
-      },
-      body: payload,
-      signal: AbortSignal.timeout(8_000),
-      cache: 'no-store',
+    await handleInbound({
+      channel,
+      messageId: message.messageId,
+      senderId: message.senderId,
+      profileName: message.profileName,
+      kind: message.kind,
+      text: message.text,
+      replyId: message.replyId,
     })
-
-    if (response.ok) return { retry: false }
-
-    const detail = await response.text().catch(() => '')
-
-    /* A 4xx is the assistant saying "I cannot handle this" — a missing route, a
-       rejected signature, a shape it does not know. None of those change on a
-       retry, and asking Meta to keep trying risks the whole app's subscription.
-       It is logged at full volume instead, because it is a deployment fault. */
-    if (response.status < 500) {
-      console.error(
-        `[meta] ${channel} relay refused with ${response.status} by ${url} — ${count} message(s) dropped. ${detail.slice(0, 300)}`,
-      )
-      return { retry: false }
-    }
-
-    console.error(
-      `[meta] ${channel} relay failed with ${response.status} — asking Meta to redeliver. ${detail.slice(0, 300)}`,
-    )
-    return { retry: true }
-  } catch (error) {
-    console.error(`[meta] ${channel} relay could not reach ${url} — asking Meta to redeliver.`, error)
-    return { retry: true }
   }
+
+  /* Always 200. Meta redelivers on anything else, and a redelivery of a message
+     already answered would message the student twice — the deduplication in the
+     handler makes the retries that do happen harmless, but there is no reason
+     to ask for them. A failure here is logged, not retried. */
+  return new Response('OK', { status: 200 })
 }
