@@ -2,8 +2,6 @@ import 'server-only'
 
 import crypto from 'node:crypto'
 
-import { assistantEndpoint } from '@/lib/support'
-
 /**
  * ---------------------------------------------------------------------------
  * Meta webhook plumbing
@@ -38,23 +36,22 @@ export function channelFor(object: unknown): MetaChannel | null {
 
 /* --------------------------------------------------------------- Config --- */
 
+/**
+ * There used to be `whatsappForwardUrl` and `socialForwardUrl` here, fed by
+ * META_WHATSAPP_FORWARD_URL and META_SOCIAL_FORWARD_URL. Nothing relays any
+ * more — `lib/bot/handler` answers the delivery — and a config field that is
+ * still read but no longer acted on is worse than none: setting the variable
+ * looks like it should redirect traffic, and silently does nothing.
+ */
 export type MetaConfig = {
   appSecret: string
   verifyToken: string
-  /** Where WhatsApp deliveries are relayed, byte for byte. */
-  whatsappForwardUrl: string | null
-  /** Where normalised Messenger / Instagram messages are relayed. */
-  socialForwardUrl: string | null
 }
 
 export function metaConfig(): MetaConfig {
   return {
     appSecret: process.env.META_APP_SECRET?.trim() ?? '',
     verifyToken: process.env.META_VERIFY_TOKEN?.trim() ?? '',
-    whatsappForwardUrl:
-      process.env.META_WHATSAPP_FORWARD_URL?.trim() || assistantEndpoint('/api/whatsapp/webhook'),
-    socialForwardUrl:
-      process.env.META_SOCIAL_FORWARD_URL?.trim() || assistantEndpoint('/api/social/webhook'),
   }
 }
 
