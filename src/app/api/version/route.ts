@@ -29,8 +29,63 @@ export const dynamic = 'force-dynamic'
  *  only: whether a secret exists is not a secret, but its value is.
  * =============================================================================
  */
-export async function GET() {
+/**
+ * What the *running process* believes DATABASE_URL is.
+ *
+ * Everything else here is read from the bundle or from a boolean check, and
+ * both agreed the database was fine while the admin could not sign in. They
+ * were not wrong: `configured.database` only validates the shape of the URL and
+ * never opens a connection, so a well-formed URL carrying the wrong password
+ * reads as healthy until something tries to use it.
+ *
+ * Diagnosing that from a shell does not work either. `npm run db:check` runs in
+ * an SSH session and reads `.env.production.local`; the app runs under
+ * Passenger, which hPanel injects its own environment into, and Next never
+ * overwrites a variable that is already set. The two processes can therefore
+ * hold different values for the same name, and the shell always reports the
+ * healthy one.
+ *
+ * So this reports from inside the process that actually connects. The host and
+ * username are already shown to anyone who reaches the sign-in screen, and the
+ * password appears only as a character count — enough to catch a mangled or
+ * double-encoded value, useless for recovering the secret.
+ */
+function describeConnection(): Record<string, unknown> {
+  const raw = process.env.DATABASE_URL?.trim()
+  if (!raw) return { set: false }
+
+  try {
+    const url = new URL(raw)
+    return {
+      set: true,
+      protocol: url.protocol.replace(':', ''),
+      host: url.hostname,
+      port: url.port || '(default)',
+      user: decodeURIComponent(url.username),
+      passwordChars: decodeURIComponent(url.password).length,
+    }
+  } catch {
+    return { set: true, parseable: false }
+  }
+}
+
+export async function GET(request: Request) {
   const commit = process.env.BUILD_SHA || null
+
+  /* Opt-in: the probe opens a real connection, so it stays off the default
+     response that CI polls after every deploy. */
+  const probe = new URL(request.url).searchParams.get('probe') === '1'
+  let database: Record<string, unknown> | undefined
+
+  if (probe) {
+    const { pingDatabase } = await import('@/db')
+    const result = await pingDatabase()
+    database = {
+      ...describeConnection(),
+      reachable: result.ok,
+      ...(result.ok ? {} : { reason: result.reason }),
+    }
+  }
 
   return NextResponse.json(
     {
@@ -61,6 +116,8 @@ export async function GET() {
         /** The assistant can post captured enquiries to /api/leads/ingest. */
         leadIngest: Boolean(process.env.LEAD_INGEST_SECRET?.trim()),
       },
+      /* Only present with ?probe=1 — see describeConnection above. */
+      ...(database ? { database } : {}),
     },
     {
       /* Hostinger's edge holds pages for up to a year. A cached answer here

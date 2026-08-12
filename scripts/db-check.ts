@@ -21,10 +21,21 @@ import { createHash } from 'node:crypto'
 
 import { config as loadEnv } from 'dotenv'
 
-/* Same order and precedence Next uses, most specific first. dotenv keeps the
-   first value it sees and never overwrites a real environment variable, which
-   matters here: a DATABASE_URL set in hPanel's Node.js panel silently wins over
-   every file below, and that is invisible unless you go looking for it. */
+/* Captured before dotenv runs, because dotenv will not overwrite a variable
+   that is already set and afterwards the two are indistinguishable.
+ *
+ * This is the case that makes a shell diagnosis lie. A DATABASE_URL set in
+ * hPanel's Node.js panel is injected into the Passenger app process but not
+ * into an SSH session, so the app and this script can be reading different
+ * values for the same name — and this script, run from a shell, will always
+ * report the healthy one. When the flag below is true, trust the app's own
+ * report at /api/version?probe=1 over anything printed here. */
+const fromRealEnv = {
+  DATABASE_URL: process.env.DATABASE_URL !== undefined,
+  DIRECT_URL: process.env.DIRECT_URL !== undefined,
+}
+
+/* Same order and precedence Next uses, most specific first. */
 loadEnv({ path: '.env.production.local' })
 loadEnv({ path: '.env.local' })
 loadEnv({ path: '.env' })
@@ -36,9 +47,18 @@ function fingerprint(value: string): string {
   return `${value.length} chars, sha256:${digest}`
 }
 
-function describe(label: string, raw: string | undefined) {
+function describe(label: string, raw: string | undefined, preset: boolean) {
   console.log(`\n${label}`)
   console.log('─'.repeat(label.length))
+
+  if (preset) {
+    console.log(
+      '  ⚠  Set as a real environment variable, not read from a .env file.\n' +
+        '     The app process gets its own copy from hPanel > Node.js, which this\n' +
+        '     shell cannot see. If the two disagree the app uses hPanel\'s and this\n' +
+        '     report is misleading — confirm with /api/version?probe=1.',
+    )
+  }
 
   const url = raw?.trim()
   if (!url) {
@@ -96,8 +116,8 @@ async function main() {
   console.log(`  cwd        ${process.cwd()}`)
   console.log(`  NODE_ENV   ${process.env.NODE_ENV ?? '(unset)'}`)
 
-  describe('DATABASE_URL  (the app)', process.env.DATABASE_URL)
-  describe('DIRECT_URL    (migrations)', process.env.DIRECT_URL)
+  describe('DATABASE_URL  (the app)', process.env.DATABASE_URL, fromRealEnv.DATABASE_URL)
+  describe('DIRECT_URL    (migrations)', process.env.DIRECT_URL, fromRealEnv.DIRECT_URL)
 
   /* Imported here, not at module scope: `src/db` reads DATABASE_URL lazily, but
      only because it was written to. Loading it after dotenv keeps that
