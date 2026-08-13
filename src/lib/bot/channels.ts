@@ -30,6 +30,8 @@ export interface ReplyButton {
   /** Echoed back as the message body when tapped. Max 20 chars of title. */
   id: string
   title: string
+  /** Shown under the title in a WhatsApp list row. Ignored elsewhere. */
+  description?: string
 }
 
 const API_VERSION = process.env.WHATSAPP_API_VERSION?.trim() || 'v21.0'
@@ -55,18 +57,25 @@ export async function sendMessage(
   recipient: string,
   text: string,
   buttons?: ReplyButton[],
+  listLabel?: string,
 ): Promise<SendResult> {
-  const chunks = split(text, LIMITS[channel] ?? 1000)
+  /* An interactive message body is capped at 1024, a quarter of a plain text
+     message. Splitting to the smaller figure whenever options are attached is
+     what stops a long answer with chips from being rejected outright — which
+     failed as "nothing arrived", not as "the buttons did not render". */
+  const limit =
+    channel === 'whatsapp' && buttons?.length ? 1024 : LIMITS[channel] ?? 1000
+  const chunks = split(text, limit)
   if (!chunks.length) return { ok: true }
 
   let last: SendResult = { ok: true }
   for (let index = 0; index < chunks.length; index++) {
-    // Buttons ride on the final chunk only — attaching them to each part would
-    // show the same three options three times.
+    // Options ride on the final chunk only — attaching them to each part would
+    // show the same menu several times over.
     const withButtons = index === chunks.length - 1 ? buttons : undefined
     last =
       channel === 'whatsapp'
-        ? await sendWhatsApp(recipient, chunks[index], withButtons)
+        ? await sendWhatsApp(recipient, chunks[index], withButtons, listLabel)
         : await sendSocial(channel, recipient, chunks[index])
     if (!last.ok) break
   }
@@ -75,10 +84,18 @@ export async function sendMessage(
 
 /* -------------------------------------------------------------- WhatsApp -- */
 
+/**
+ * WhatsApp offers two interactive shapes, and the choice is forced by count:
+ * reply buttons top out at THREE. A seven-course catalogue does not fit, and
+ * sending four buttons is rejected outright rather than truncated — which is
+ * why the list shape exists. Lists hold ten rows, carry a description line per
+ * row, and open behind a single tap.
+ */
 async function sendWhatsApp(
   to: string,
   body: string,
   buttons?: ReplyButton[],
+  listLabel?: string,
 ): Promise<SendResult> {
   const phoneId = process.env.WHATSAPP_PHONE_ID?.trim()
   const token = process.env.WHATSAPP_TOKEN?.trim()
@@ -86,9 +103,36 @@ async function sendWhatsApp(
     return { ok: false, error: 'WHATSAPP_PHONE_ID / WHATSAPP_TOKEN are not set.' }
   }
 
-  const usable = (buttons ?? []).slice(0, 3)
+  const offered = buttons ?? []
+  const usable = offered.slice(0, offered.length > 3 ? 10 : 3)
 
-  const payload = usable.length
+  const payload = offered.length > 3
+    ? {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'list',
+          body: { text: body },
+          action: {
+            // Meta enforces these lengths and rejects the whole message when
+            // one is exceeded, so they are trimmed here rather than trusted.
+            button: (listLabel || 'Choose').slice(0, 20),
+            sections: [
+              {
+                rows: usable.map((option) => ({
+                  id: option.id.slice(0, 200),
+                  title: option.title.slice(0, 24),
+                  ...(option.description
+                    ? { description: option.description.slice(0, 72) }
+                    : {}),
+                })),
+              },
+            ],
+          },
+        },
+      }
+    : usable.length
     ? {
         messaging_product: 'whatsapp',
         to,

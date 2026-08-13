@@ -21,22 +21,30 @@ import { detectGoal, recommendFor, renderRecommendation, type Leaning, type Stud
 import { detectLanguage } from './language'
 import {
   ACTION_PREFIX,
+  OPTION_PREFIX,
   advanceCapture,
   asCaptureState,
+  asPendingOptions,
   asPlainText,
   beginCapture,
   busyNotice,
   cancelled,
   confirmation,
-  courseList,
+  courseDetails,
+  courseListIntro,
+  courseOptions,
   handoffNotice,
   helpMenu,
   internshipAnswer,
   isCaptureStale,
+  listLabel,
   mediaAck,
+  menuOptions,
+  pendingOptions,
   promptFor,
   quickActions,
   resolveNumbered,
+  resolvePending,
   welcome,
   type CaptureFlow,
   type CaptureState,
@@ -151,7 +159,10 @@ async function route(message: InboundMessage): Promise<void> {
      no obvious way out of a half-finished form. */
   if (GREETINGS.includes(lowered) || answer === `${ACTION_PREFIX}menu`) {
     await clearCapture(conversation.id)
-    return say(context, GREETINGS.includes(lowered) ? welcome(context.language) : helpMenu(context.language))
+    return sayMenu(
+      context,
+      GREETINGS.includes(lowered) ? welcome(context.language) : helpMenu(context.language),
+    )
   }
 
   // --- An in-progress capture owns the turn ---------------------------------
@@ -159,9 +170,25 @@ async function route(message: InboundMessage): Promise<void> {
   if (active && !isCaptureStale(active)) return continueCapture(context, active, answer)
   if (active) await clearCapture(conversation.id)
 
+  /* A bare "3" answering the menu we sent last turn. WhatsApp taps arrive as an
+     id already; this is for the text-only channels, and for the people who type
+     the number rather than tapping. Consumed either way — the numbers on screen
+     stop meaning anything once the conversation moves on. */
+  const pending = asPendingOptions(conversation.capture)
+  const chosen = pending ? resolvePending(pending, answer) : answer
+  if (pending) await clearCapture(conversation.id)
+
   // --- Tapped chips ---------------------------------------------------------
-  if (answer === `${ACTION_PREFIX}admission`) return startCapture(context, 'admission')
-  if (answer === `${ACTION_PREFIX}human`) return escalate(context)
+  if (chosen === `${ACTION_PREFIX}admission`) return startCapture(context, 'admission')
+  if (chosen === `${ACTION_PREFIX}human`) return escalate(context)
+  if (chosen === `${ACTION_PREFIX}guidance`) return startCapture(context, 'guidance')
+  if (chosen === `${ACTION_PREFIX}internship`) {
+    return say(context, internshipAnswer(context.language), quickActions(context.language))
+  }
+  if (chosen === `${ACTION_PREFIX}courses`) return sayCourses(context)
+  if (chosen.startsWith(`${OPTION_PREFIX}course:`)) {
+    return sayCourse(context, chosen.slice(`${OPTION_PREFIX}course:`.length))
+  }
 
   if (shouldEscalate(message.text)) return escalate(context)
 
@@ -170,10 +197,10 @@ async function route(message: InboundMessage): Promise<void> {
   const intent = classifyIntent(message.text, terms.map((entry) => entry.term))
 
   if (intent === 'human_handoff') return escalate(context)
-  if (intent === 'course') {
-    return say(context, courseList(context.language, knowledge.courses.map((course) => course.title)))
+  if (intent === 'course') return sayCourses(context)
+  if (intent === 'internship') {
+    return say(context, internshipAnswer(context.language), quickActions(context.language))
   }
-  if (intent === 'internship') return say(context, internshipAnswer(context.language))
   if (intent === 'admission') {
     const slug = matchCourseTerm(message.text, terms)
     const title = knowledge.courses.find((course) => course.slug === slug)?.title
@@ -183,6 +210,13 @@ async function route(message: InboundMessage): Promise<void> {
   if (intent === 'course_recommendation') {
     const stated = detectGoal(message.text)
     return startCapture(context, 'guidance', stated ? { goal: stated } : undefined)
+  }
+  /* Named a course we publish. Answering from the record beats answering from
+     the model: the duration, level and mode are exactly what the admin last
+     saved, and the reply comes back with somewhere to go next. */
+  if (intent === 'course_details') {
+    const slug = matchCourseTerm(message.text, terms)
+    if (slug) return sayCourse(context, slug)
   }
 
   // Everything else is a question the model answers from the live catalogue.
@@ -304,11 +338,37 @@ function resolveLanguage(message: InboundMessage, stored: BotLanguage): BotLangu
 
 /* ------------------------------------------------------------- Responding -- */
 
-async function say(context: Context, text: string, buttons?: ReplyButton[]): Promise<void> {
-  // Buttons only exist on WhatsApp; elsewhere the options are already numbered
-  // into the text by `asPlainText`.
-  const usable = context.channel === 'whatsapp' ? buttons : undefined
-  const result = await sendMessage(context.channel, context.recipient, text, usable)
+/**
+ * `remember` records the options offered, so a bare "3" on the next message can
+ * be resolved back to the third one. It is off by default because the capture
+ * machine keeps its own state in the same column and resolves its own numbers
+ * from the outstanding prompt — writing over that mid-flow would lose the form.
+ */
+async function say(
+  context: Context,
+  text: string,
+  buttons?: ReplyButton[],
+  remember = false,
+): Promise<void> {
+  const whatsapp = context.channel === 'whatsapp'
+  // Tappable options only exist on WhatsApp; elsewhere they are numbered into
+  // the text by the caller via `asPlainText`.
+  const usable = whatsapp ? buttons : undefined
+  const result = await sendMessage(
+    context.channel,
+    context.recipient,
+    text,
+    usable,
+    whatsapp && buttons && buttons.length > 3 ? listLabel(context.language) : undefined,
+  )
+
+  if (remember && buttons?.length) {
+    await getDb()
+      .update(conversations)
+      .set({ capture: pendingOptions(buttons) as unknown as Record<string, unknown> })
+      .where(eq(conversations.id, context.conversationId))
+      .catch(() => {})
+  }
 
   await getDb()
     .insert(conversationMessages)
@@ -336,6 +396,43 @@ async function say(context: Context, text: string, buttons?: ReplyButton[]): Pro
   console.error(
     `[bot] ${context.channel} send failed to ${context.recipient}: ${result.error ?? 'unknown error'}`,
   )
+}
+
+/** The menu, with its options attached rather than described. */
+function sayMenu(context: Context, text: string): Promise<void> {
+  const options = menuOptions(context.language)
+  return context.channel === 'whatsapp'
+    ? say(context, text, options, true)
+    : say(context, asPlainText({ text, buttons: options }), options, true)
+}
+
+/** The catalogue, as a row per course rather than a bullet list. */
+async function sayCourses(context: Context): Promise<void> {
+  const knowledge = await loadKnowledge()
+  if (!knowledge.courses.length) return answerWithModel(context, 'what courses do you offer')
+
+  const options = courseOptions(knowledge.courses)
+  const intro = courseListIntro(context.language)
+
+  /* WhatsApp shows the rows itself, so the body only introduces them. The
+     text-only channels get the same courses numbered into the message. */
+  return context.channel === 'whatsapp'
+    ? say(context, intro, options, true)
+    : say(context, asPlainText({ text: intro, buttons: options }), options, true)
+}
+
+/** One course, from the record the admin last saved. */
+async function sayCourse(context: Context, slug: string): Promise<void> {
+  const knowledge = await loadKnowledge()
+  const course = knowledge.courses.find((entry) => entry.slug === slug)
+
+  // A slug that no longer resolves means the course was renamed or unpublished
+  // between our sending the list and their tapping it. Show what we do have.
+  if (!course) return sayCourses(context)
+
+  await noteLead(context, undefined, { course: course.title, status: 'interested' })
+
+  return say(context, courseDetails(context.language, course), quickActions(context.language))
 }
 
 async function answerWithModel(context: Context, message: string): Promise<void> {

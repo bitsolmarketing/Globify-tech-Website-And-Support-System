@@ -47,12 +47,17 @@ const WELCOME: Localised = {
 
 export const welcome = (language: BotLanguage) => pick(WELCOME, language)
 
+/**
+ * The options themselves are attached to the message, not spelled out in it —
+ * `menuOptions` below. On WhatsApp they arrive as a tappable list; on the
+ * text-only channels `asPlainText` numbers them. Listing them in the copy as
+ * well would print everything twice.
+ */
 const HELP: Localised = {
-  en: 'No problem 👍 I can help with:\n\n🎓 Courses\n📝 Admission\n🧭 Career guidance\n💼 Internships\n🙋 Talking to a counsellor\n\nWhich one?',
-  ur: 'کوئی بات نہیں 👍 میں ان میں مدد کر سکتا ہوں:\n\n🎓 کورسز\n📝 داخلہ\n🧭 کیریئر رہنمائی\n💼 انٹرن شپ\n🙋 کونسلر سے بات\n\nکون سا؟',
-  ur_roman:
-    'Koi baat nahi 👍 Main in mein madad kar sakta hoon:\n\n🎓 Courses\n📝 Admission\n🧭 Career guidance\n💼 Internship\n🙋 Counsellor se baat\n\nKaunsa?',
-  pa: 'کوئی گل نئیں 👍 میں ایہناں وچ مدد کر سکنا آں:\n\n🎓 کورس\n📝 داخلہ\n🧭 کیریئر رہنمائی\n💼 انٹرن شپ\n🙋 کونسلر نال گل\n\nکیہڑا؟',
+  en: 'No problem 👍 What can I help you with?',
+  ur: 'کوئی بات نہیں 👍 میں آپ کی کس چیز میں مدد کروں؟',
+  ur_roman: 'Koi baat nahi 👍 Main aap ki kis cheez mein madad karoon?',
+  pa: 'کوئی گل نئیں 👍 میں تہاڈی کہڑی گل وچ مدد کراں؟',
 }
 
 export const helpMenu = (language: BotLanguage) => pick(HELP, language)
@@ -73,6 +78,16 @@ const WHICH_ONE: Localised = {
 
 export function courseList(language: BotLanguage, titles: string[]): string {
   return `${pick(PROGRAMS, language)}\n\n${titles.map((title) => `• ${title}`).join('\n')}\n\n${pick(WHICH_ONE, language)}`
+}
+
+/**
+ * The same message for when the courses travel as selectable options instead.
+ *
+ * Without this the catalogue prints twice — once as bullets in the body, once
+ * as the rows of the list sitting directly underneath it.
+ */
+export function courseListIntro(language: BotLanguage): string {
+  return `${pick(PROGRAMS, language)}\n\n${pick(WHICH_ONE, language)}`
 }
 
 /**
@@ -170,6 +185,125 @@ export function quickActions(language: BotLanguage): ReplyButton[] {
     { id: `${ACTION_PREFIX}human`, title: human },
     { id: `${ACTION_PREFIX}menu`, title: menu },
   ]
+}
+
+/* ----------------------------------------------------------------- Menus -- */
+
+/**
+ * The five things this bot can actually do, offered as options rather than
+ * described in prose.
+ *
+ * Five, not three: WhatsApp renders anything over three as a list, which holds
+ * ten. The three-button shape is kept for follow-ups under an answer, where a
+ * full menu would be noise.
+ */
+export function menuOptions(language: BotLanguage): ReplyButton[] {
+  const labels: Record<BotLanguage, [string, string, string, string, string]> = {
+    en: ['🎓 Our courses', '📝 Apply for admission', '🧭 Which course suits me?', '💼 Internships', '🙋 Talk to a counsellor'],
+    ur: ['🎓 ہمارے کورسز', '📝 داخلہ لینا ہے', '🧭 کون سا کورس مناسب ہے؟', '💼 انٹرن شپ', '🙋 کونسلر سے بات'],
+    ur_roman: ['🎓 Hamare courses', '📝 Admission lena hai', '🧭 Kaunsa course sahi hai?', '💼 Internship', '🙋 Counsellor se baat'],
+    pa: ['🎓 ساڈے کورس', '📝 داخلہ لینا اے', '🧭 کیہڑا کورس ٹھیک اے؟', '💼 انٹرن شپ', '🙋 کونسلر نال گل'],
+  }
+  const [courses, admission, guidance, internship, human] = labels[language] ?? labels.en
+  return [
+    { id: `${ACTION_PREFIX}courses`, title: courses },
+    { id: `${ACTION_PREFIX}admission`, title: admission },
+    { id: `${ACTION_PREFIX}guidance`, title: guidance },
+    { id: `${ACTION_PREFIX}internship`, title: internship },
+    { id: `${ACTION_PREFIX}human`, title: human },
+  ]
+}
+
+/** Label on the button that opens a WhatsApp list. Max 20 characters. */
+export function listLabel(language: BotLanguage): string {
+  return pick(
+    {
+      en: '📋 Choose',
+      ur: '📋 منتخب کریں',
+      ur_roman: '📋 Choose karein',
+      pa: '📋 چُنو',
+    },
+    language,
+  )
+}
+
+/**
+ * One row per course, carrying the slug rather than the title.
+ *
+ * The id survives a rename in the admin; a title match would not. `shortTitle`
+ * is used because a WhatsApp row title is cut at 24 characters and several of
+ * the full names are longer than that.
+ */
+export function courseOptions(
+  courses: { slug: string; shortTitle: string; title: string; duration: string }[],
+): ReplyButton[] {
+  return courses.slice(0, 10).map((course) => ({
+    id: `${OPTION_PREFIX}course:${course.slug}`,
+    title: course.shortTitle || course.title,
+    description: course.duration,
+  }))
+}
+
+const COURSE_INTRO: Localised = {
+  en: '🎓 *{title}*\n_{level} · {duration} · {mode}_\n\n{tagline}\n\n*You will learn:* {skills}\n\n*Leads to:* {careers}',
+  ur: '🎓 *{title}*\n_{level} · {duration} · {mode}_\n\n{tagline}\n\n*آپ سیکھیں گے:* {skills}\n\n*کیریئر:* {careers}',
+  ur_roman:
+    '🎓 *{title}*\n_{level} · {duration} · {mode}_\n\n{tagline}\n\n*Aap seekhenge:* {skills}\n\n*Career:* {careers}',
+  pa: '🎓 *{title}*\n_{level} · {duration} · {mode}_\n\n{tagline}\n\n*تسی سِکھو گے:* {skills}\n\n*کیریئر:* {careers}',
+}
+
+export function courseDetails(
+  language: BotLanguage,
+  course: {
+    title: string
+    level: string
+    duration: string
+    mode: string[]
+    tagline: string
+    skills: string[]
+    careers: string[]
+  },
+): string {
+  return pick(COURSE_INTRO, language)
+    .replace('{title}', course.title)
+    .replace('{level}', course.level)
+    .replace('{duration}', course.duration)
+    .replace('{mode}', course.mode.join(' / ') || '—')
+    .replace('{tagline}', course.tagline)
+    .replace('{skills}', course.skills.slice(0, 6).join(', ') || '—')
+    .replace('{careers}', course.careers.slice(0, 4).join(', ') || '—')
+}
+
+/**
+ * Options offered on the previous turn, so a bare "3" can be resolved.
+ *
+ * Stored in the same `capture` column as a flow, which is safe because
+ * `asCaptureState` rejects anything without a known flow name and this shape
+ * has none. It is consumed on the next message either way: a list that is one
+ * turn old is no longer what the numbers on screen refer to.
+ */
+export interface PendingOptions {
+  kind: 'options'
+  ids: string[]
+}
+
+export const pendingOptions = (options: ReplyButton[]): PendingOptions => ({
+  kind: 'options',
+  ids: options.map((option) => option.id),
+})
+
+export function asPendingOptions(value: unknown): PendingOptions | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<PendingOptions>
+  if (candidate.kind !== 'options' || !Array.isArray(candidate.ids)) return null
+  return { kind: 'options', ids: candidate.ids.filter((id) => typeof id === 'string') }
+}
+
+/** Map a typed "3" back to the id of the third option offered. */
+export function resolvePending(pending: PendingOptions, raw: string): string {
+  const match = raw.trim().match(/^([1-9]|10)[.)]?$/)
+  if (!match) return raw
+  return pending.ids[Number(match[1]) - 1] ?? raw
 }
 
 /* --------------------------------------------------------------- Capture -- */
