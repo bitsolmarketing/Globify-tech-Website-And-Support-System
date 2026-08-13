@@ -716,6 +716,40 @@ Two changes make it stop happening:
   — still finds what it asks for. Nothing is overwritten: a filename present in
   both builds is the same file, because the name is a hash of the contents.
 
+Neither of those helps a page already stuck at the edge, and one did get stuck:
+`/` served the client-side exception for three days after the cap shipped,
+because the copy pinned there predated it. Deploys kept going green the whole
+time — they prove the origin is current, which this failure does not contradict.
+
+### Checking what visitors actually get
+
+```bash
+npm run edge:check                      # production
+npm run edge:check -- https://other     # somewhere else
+```
+
+Fetches each main route the way a browser does and confirms every hashed asset
+the returned HTML references still resolves. It runs at the end of the deploy
+workflow too, so a stuck page fails the build instead of going unnoticed; set
+the repository variable `EDGE_CHECK=off` to skip it.
+
+Two things it does that a manual check will not:
+
+- **It negotiates compression.** `curl https://globifytech.com/` sends no
+  `Accept-Encoding` and gets the uncompressed variant, cached separately. During
+  the three days above that variant was fresh and correct — every command-line
+  check said the site was fine while every real browser got the pinned copy.
+- **It re-fetches through a cache-buster before concluding anything.** `?x=1` is
+  a different cache key, so it reaches the origin. Assets that 404 at the edge
+  but resolve at the origin mean a stale cached page — purge. Assets that 404 at
+  both mean the build is genuinely missing them — purging would change nothing.
+  The script names which one it found, because the remedies share nothing.
+
+When it reports a stale page, the only fix is **hPanel › Websites ›
+globifytech.com › Performance › Purge Cache**, and it has to be a full purge:
+each edge node holds its own copy, and compressed and uncompressed are cached
+separately, so clearing a single URL can leave the broken variant behind.
+
 ### Knowing whether a deploy landed
 
 Pull-based deployment has one blind spot: nothing reports back. A build still
