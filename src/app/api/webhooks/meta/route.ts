@@ -89,11 +89,18 @@ export async function POST(request: NextRequest) {
   const raw = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
 
-  if (!verifyMetaSignature(raw, signature, config.appSecret)) {
+  if (!verifyMetaSignature(raw, signature, config.appSecrets)) {
+    /* Name the likely cause. A rejected delivery is invisible from the outside
+       — the sender's message simply goes unanswered — and the commonest reason
+       is a product signing with a secret this deployment does not hold, not an
+       attacker. Instagram has its own app secret, separate from the Facebook
+       app that owns WhatsApp. */
     console.warn(
-      config.appSecret
-        ? '[meta] rejected a delivery with an invalid X-Hub-Signature-256.'
-        : '[meta] META_APP_SECRET is not set — every delivery is rejected. Set it in the environment.',
+      config.appSecrets.length
+        ? `[meta] rejected a delivery with an invalid X-Hub-Signature-256 (object: ${
+            String(parseWebhookBody(raw)?.object ?? 'unknown')
+          }; ${config.appSecrets.length} secret(s) tried). If this is Instagram, set INSTAGRAM_APP_SECRET.`
+        : '[meta] no app secret is set — every delivery is rejected. Set META_APP_SECRET in the environment.',
     )
     return new Response('Invalid signature', { status: 401 })
   }

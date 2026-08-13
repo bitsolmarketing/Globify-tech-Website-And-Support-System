@@ -44,13 +44,34 @@ export function channelFor(object: unknown): MetaChannel | null {
  * looks like it should redirect traffic, and silently does nothing.
  */
 export type MetaConfig = {
-  appSecret: string
+  /** Every secret a genuine delivery could be signed with. */
+  appSecrets: string[]
   verifyToken: string
 }
 
+/**
+ * One app in the dashboard, but not one secret.
+ *
+ * "Instagram API with Instagram login" issues the Instagram product its OWN app
+ * id and app secret, separate from the Facebook app that owns WhatsApp and the
+ * Page. Instagram signs its deliveries with that one. Checking only
+ * META_APP_SECRET rejects every Instagram message with a 401 — before the body
+ * is parsed, so nothing is recorded and nothing is logged beyond "invalid
+ * signature". WhatsApp keeps working throughout, which makes it read like
+ * Instagram is not delivering at all rather than being turned away at the door.
+ *
+ * Both are accepted because one endpoint serves all three products. This does
+ * not weaken anything: a forged request must still be signed with a secret we
+ * hold, and having two does not make either easier to guess.
+ */
 export function metaConfig(): MetaConfig {
+  const secrets = [
+    process.env.META_APP_SECRET?.trim(),
+    process.env.INSTAGRAM_APP_SECRET?.trim(),
+  ].filter((secret): secret is string => Boolean(secret))
+
   return {
-    appSecret: process.env.META_APP_SECRET?.trim() ?? '',
+    appSecrets: secrets,
     verifyToken: process.env.META_VERIFY_TOKEN?.trim() ?? '',
   }
 }
@@ -66,19 +87,32 @@ export function metaConfig(): MetaConfig {
  * webhook is an open door, so "not configured" must never mean "accept
  * everything".
  */
-export function verifyMetaSignature(rawBody: string, header: string | null, secret: string): boolean {
-  if (!secret) return false
+export function verifyMetaSignature(
+  rawBody: string,
+  header: string | null,
+  secrets: string | string[],
+): boolean {
+  const candidates = (Array.isArray(secrets) ? secrets : [secrets]).filter(Boolean)
+  if (!candidates.length) return false
   if (!header?.startsWith('sha256=')) return false
 
   const received = header.slice('sha256='.length)
-  const expected = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')
 
   /* `timingSafeEqual` throws when the buffers differ in length, and
      `Buffer.from(x, 'hex')` silently truncates at the first non-hex character —
      so a malformed header has to be rejected before either is reached. */
-  if (received.length !== expected.length || !/^[0-9a-f]+$/i.test(received)) return false
+  if (!/^[0-9a-f]+$/i.test(received) || received.length !== 64) return false
+  const receivedBytes = Buffer.from(received, 'hex')
 
-  return crypto.timingSafeEqual(Buffer.from(received, 'hex'), Buffer.from(expected, 'hex'))
+  // Every candidate is compared, without an early exit on the first match, so
+  // the work done does not reveal which secret signed the request.
+  let matched = false
+  for (const secret of candidates) {
+    const expected = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest()
+    if (crypto.timingSafeEqual(receivedBytes, expected)) matched = true
+  }
+
+  return matched
 }
 
 /** Sign an outbound relay the same way Meta signs its own deliveries. */
