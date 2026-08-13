@@ -20,7 +20,8 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/db/seed.ts",
     "db:check": "tsx scripts/db-check.ts",
-    "bot:check": "tsx scripts/check-bot.ts"
+    "bot:check": "tsx scripts/check-bot.ts",
+    "edge:check": "tsx scripts/edge-check.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -74,8 +74,21 @@ async function main() {
   if (process.env.META_VERIFY_TOKEN?.trim()) ok('META_VERIFY_TOKEN')
   else fail('META_VERIFY_TOKEN', 'unset — Meta\'s handshake answers 500 and the subscription cannot be saved')
 
-  if (process.env.META_APP_SECRET?.trim()) ok('META_APP_SECRET')
+  if (process.env.META_APP_SECRET?.trim()) ok('META_APP_SECRET', 'signs WhatsApp and Messenger')
   else fail('META_APP_SECRET', 'unset — every delivery is rejected 401 by design, so nothing is ever answered')
+
+  /* The one that cost a day. Instagram Login issues the Instagram product its
+     own app id and secret, and signs with that — not with META_APP_SECRET.
+     Unset, Instagram is rejected before the body is parsed: no row, no log
+     beyond "invalid signature", and WhatsApp still working, which reads like
+     Meta is not delivering rather than us turning it away. */
+  if (process.env.INSTAGRAM_APP_SECRET?.trim()) ok('INSTAGRAM_APP_SECRET', 'signs Instagram')
+  else if (process.env.INSTAGRAM_ACCESS_TOKEN?.trim()) {
+    fail(
+      'INSTAGRAM_APP_SECRET',
+      'unset while Instagram is otherwise configured — its deliveries are signed with the Instagram app secret and will all be rejected 401. Meta > your app > Instagram > API setup > Instagram app secret > Show',
+    )
+  } else off('INSTAGRAM_APP_SECRET', 'Instagram not configured')
 
   /* --- Outbound ---------------------------------------------------------- */
   console.log('\nChannels')

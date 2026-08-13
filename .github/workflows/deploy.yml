@@ -208,6 +208,29 @@ jobs:
             echo "Performance → **Purge Cache**."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The step above proves the *origin* is serving this commit. That is not
+      # the same as visitors seeing it, and the gap between those two facts is
+      # where the home page sat broken for three days while every deploy went
+      # green: Hostinger's edge was holding a copy of `/` from an older build,
+      # pinned with `s-maxage=31536000`, referencing chunks this build had
+      # renamed. They 404ed and the page never hydrated.
+      #
+      # Nothing in CI or on the server can clear that — only hPanel > Purge
+      # Cache — so the most this can do is refuse to call the deploy finished
+      # while it is happening. Which is the whole point: the failure is trivial
+      # to fix and nearly invisible, so it needs to be loud rather than
+      # recoverable.
+      #
+      # Last, and after the summary above, so a red result here still leaves
+      # that report written. `npx tsx` rather than `npm ci` because the script
+      # imports nothing from the repo — the install would cost a minute to
+      # change nothing.
+      - name: Check the CDN is not serving a stale page
+        if: success() && vars.EDGE_CHECK != 'off'
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://globifytech.com' }}
+        run: npx --yes tsx scripts/edge-check.ts "$SITE_URL"
+
   # Off unless the repository variable DEPLOY_MODE is set to "ssh".
   #
   # Hostinger's firewall drops GitHub-hosted runners, and allowlisting them means
