@@ -49,9 +49,9 @@ export const welcome = (language: BotLanguage) => pick(WELCOME, language)
 
 /**
  * The options themselves are attached to the message, not spelled out in it —
- * `menuOptions` below. On WhatsApp they arrive as a tappable list; on the
- * text-only channels `asPlainText` numbers them. Listing them in the copy as
- * well would print everything twice.
+ * `menuOptions` below. WhatsApp shows them as a tappable list, Instagram and
+ * Messenger as quick replies. Listing them in the copy as well would print
+ * everything twice.
  */
 const HELP: Localised = {
   en: 'No problem 👍 What can I help you with?',
@@ -198,11 +198,15 @@ export function quickActions(language: BotLanguage): ReplyButton[] {
  * full menu would be noise.
  */
 export function menuOptions(language: BotLanguage): ReplyButton[] {
+  /* Kept to twenty characters. That is the ceiling for a WhatsApp reply button
+     AND for an Instagram quick reply, and Meta rejects the entire message when
+     one label is over — it does not trim for us. Written short here rather than
+     truncated at send time, so nobody reads "🧭 Which course…". */
   const labels: Record<BotLanguage, [string, string, string, string, string]> = {
-    en: ['🎓 Our courses', '📝 Apply for admission', '🧭 Which course suits me?', '💼 Internships', '🙋 Talk to a counsellor'],
-    ur: ['🎓 ہمارے کورسز', '📝 داخلہ لینا ہے', '🧭 کون سا کورس مناسب ہے؟', '💼 انٹرن شپ', '🙋 کونسلر سے بات'],
-    ur_roman: ['🎓 Hamare courses', '📝 Admission lena hai', '🧭 Kaunsa course sahi hai?', '💼 Internship', '🙋 Counsellor se baat'],
-    pa: ['🎓 ساڈے کورس', '📝 داخلہ لینا اے', '🧭 کیہڑا کورس ٹھیک اے؟', '💼 انٹرن شپ', '🙋 کونسلر نال گل'],
+    en: ['🎓 Our courses', '📝 Admission', '🧭 Which course?', '💼 Internships', '🙋 Talk to a human'],
+    ur: ['🎓 ہمارے کورسز', '📝 داخلہ', '🧭 کون سا کورس؟', '💼 انٹرن شپ', '🙋 نمائندے سے بات'],
+    ur_roman: ['🎓 Courses', '📝 Admission', '🧭 Kaunsa course?', '💼 Internship', '🙋 Team se baat'],
+    pa: ['🎓 ساڈے کورس', '📝 داخلہ', '🧭 کیہڑا کورس؟', '💼 انٹرن شپ', '🙋 بندے نال گل'],
   }
   const [courses, admission, guidance, internship, human] = labels[language] ?? labels.en
   return [
@@ -561,19 +565,13 @@ export function asCaptureState(value: unknown): CaptureState | null {
 }
 
 /**
- * Render a prompt for a channel with no tappable anything.
+ * Map a typed "2" back to the option id the machine expects.
  *
- * Instagram and Messenger are text-only, so options that would have been
- * buttons become numbered lines and the student types "2". `detectGoal` reads a
- * bare numeral for exactly this reason — the two were designed together.
+ * Every channel renders options as something tappable now — reply buttons or a
+ * list on WhatsApp, quick replies on Instagram and Messenger — so this is no
+ * longer how the options are presented. It stays because people type the number
+ * anyway, out of habit or because the chips have scrolled away.
  */
-export function asPlainText(prompt: Prompt): string {
-  if (!prompt.buttons?.length) return prompt.text
-  const numbered = prompt.buttons.map((button, index) => `${index + 1}. ${button.title}`).join('\n')
-  return `${prompt.text}\n\n${numbered}`
-}
-
-/** Map a typed "2" back to the option id the machine expects. */
 export function resolveNumbered(prompt: Prompt | undefined, raw: string): string {
   const match = raw.trim().match(/^([1-9])[.)]?$/)
   if (!match || !prompt?.buttons?.length) return raw

@@ -25,7 +25,6 @@ import {
   advanceCapture,
   asCaptureState,
   asPendingOptions,
-  asPlainText,
   beginCapture,
   busyNotice,
   cancelled,
@@ -56,10 +55,11 @@ import {
  * The conversation handler
  * ---------------------------------------------------------------------------
  *
- * One counsellor, three channels. WhatsApp gets tappable buttons; Instagram and
- * Messenger are text-only, so the same prompts are rendered as numbered lines.
- * Everything that decides *what* to say — the router, the recommendation, the
- * capture machine, the knowledge — is shared, so the three cannot drift apart.
+ * One counsellor, three channels. Each renders options in the only shape it
+ * has — reply buttons or a list on WhatsApp, quick replies on Instagram and
+ * Messenger — but everything that decides *what* to say is shared: the router,
+ * the recommendation, the capture machine, the knowledge. So the three cannot
+ * drift apart, and adding a channel is a rendering problem, not a second bot.
  *
  * Every path swallows its errors. This runs inside a webhook Meta retries on
  * any non-2xx, and a retry of a message already answered would message the
@@ -358,14 +358,15 @@ async function say(
   remember = false,
 ): Promise<void> {
   const whatsapp = context.channel === 'whatsapp'
-  // Tappable options only exist on WhatsApp; elsewhere they are numbered into
-  // the text by the caller via `asPlainText`.
-  const usable = whatsapp ? buttons : undefined
+  /* Every channel gets something to tap. WhatsApp renders reply buttons or a
+     list depending on how many there are; Instagram and Messenger render quick
+     replies. `channels.ts` picks the shape — the caller only says what the
+     options are. */
   const result = await sendMessage(
     context.channel,
     context.recipient,
     text,
-    usable,
+    buttons,
     whatsapp && buttons && buttons.length > 3 ? listLabel(context.language) : undefined,
   )
 
@@ -407,10 +408,7 @@ async function say(
 
 /** The menu, with its options attached rather than described. */
 function sayMenu(context: Context, text: string): Promise<void> {
-  const options = menuOptions(context.language)
-  return context.channel === 'whatsapp'
-    ? say(context, text, options, true)
-    : say(context, asPlainText({ text, buttons: options }), options, true)
+  return say(context, text, menuOptions(context.language), true)
 }
 
 /** The catalogue, as a row per course rather than a bullet list. */
@@ -418,14 +416,10 @@ async function sayCourses(context: Context): Promise<void> {
   const knowledge = await loadKnowledge()
   if (!knowledge.courses.length) return answerWithModel(context, 'what courses do you offer')
 
-  const options = courseOptions(knowledge.courses)
-  const intro = courseListIntro(context.language)
-
-  /* WhatsApp shows the rows itself, so the body only introduces them. The
-     text-only channels get the same courses numbered into the message. */
-  return context.channel === 'whatsapp'
-    ? say(context, intro, options, true)
-    : say(context, asPlainText({ text: intro, buttons: options }), options, true)
+  /* The body only introduces the courses — every channel renders them itself
+     now, as list rows on WhatsApp and quick replies elsewhere, so spelling
+     them out in the text would print the catalogue twice. */
+  return say(context, courseListIntro(context.language), courseOptions(knowledge.courses), true)
 }
 
 /** One course, from the record the admin last saved. */
@@ -503,9 +497,7 @@ async function continueCapture(
 }
 
 function sayPrompt(context: Context, prompt: Prompt): Promise<void> {
-  return context.channel === 'whatsapp'
-    ? say(context, prompt.text, prompt.buttons)
-    : say(context, asPlainText(prompt))
+  return say(context, prompt.text, prompt.buttons)
 }
 
 async function completeCapture(
