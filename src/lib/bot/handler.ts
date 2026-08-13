@@ -113,13 +113,6 @@ async function route(message: InboundMessage): Promise<void> {
     console.error('[bot] DATABASE_URL is not set — cannot hold a conversation.')
     return
   }
-  if (!canSend(message.channel)) {
-    console.warn(
-      `[bot] ${message.channel} message received but no access token is configured — acknowledged, not answered.`,
-    )
-    return
-  }
-
   const isWhatsApp = message.channel === 'whatsapp'
   const phone = isWhatsApp ? `+${message.senderId.replace(/\D/g, '')}` : undefined
 
@@ -132,6 +125,20 @@ async function route(message: InboundMessage): Promise<void> {
 
   // A human has taken this thread over. Stay out of their way.
   if (conversation.handedOff) return
+
+  /* Deliberately AFTER the message is recorded.
+   *
+   * Checking first meant a channel with no token produced no row, which is
+   * byte for byte what a message Meta never delivered looks like — and those
+   * two need completely different fixes. Recording first makes the transcript
+   * an honest delivery log: a row with no answer means "we heard you and could
+   * not reply", silence means "it never arrived". */
+  if (!canSend(message.channel)) {
+    console.error(
+      `[bot] ${message.channel} delivered a message but no access token is configured — recorded, not answered.`,
+    )
+    return
+  }
 
   const context: Context = {
     channel: message.channel,
