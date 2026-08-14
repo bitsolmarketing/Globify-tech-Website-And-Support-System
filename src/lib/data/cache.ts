@@ -97,6 +97,22 @@ const CONNECTION_ERROR_CODES = new Set([
   '57P01',
   '57P02',
   '57P03',
+
+  /* Raised by the query bound in `src/db/index.ts`, and the one code here that
+     the driver could never have reported by itself.
+
+     That gap is what let this breaker be bypassed by the worst failure it was
+     built for. Everything above is something going *wrong* and saying so; a
+     connection that simply stops answering says nothing at all, so the breaker
+     never opened, each of the nine dashboard reads waited out its own timeout,
+     and the request reached the proxy's limit anyway. A hang only becomes
+     catchable once something turns it into an error — and this is that error.
+
+     57014 is the same fault reported from the server side, a statement
+     cancelled for outstaying its welcome. Nothing in this app cancels a query
+     for any other reason. */
+  'QUERY_TIMEOUT',
+  '57014',
 ])
 
 /**

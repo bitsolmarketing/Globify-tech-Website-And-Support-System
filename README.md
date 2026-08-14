@@ -256,13 +256,22 @@ Three things to watch:
   wrong hostname rather than a missing transport.
 - **The pooler username is `postgres.<project-ref>`**, not a bare `postgres`.
   Getting it wrong reports `Tenant or user not found`, not an auth failure.
+- **Use the session pooler (5432), not the transaction pooler (6543).** 6543
+  serves a burst of concurrent queries correctly once and then wedges the moment
+  a pooled connection is *reused*, leaving backends parked in `active` /
+  `ClientRead` that no server-side timeout can reap. It presents as an admin
+  that works on the first load after a restart and 504s on every one after it.
+  `src/db/index.ts` corrects a 6543 pooler URL to 5432 on the way in, so an
+  existing environment recovers on deploy, but setting it correctly here makes
+  that a no-op — measured, nine concurrent reads run 9/9 in 70ms on 5432 and
+  never return on the second burst on 6543.
 
 ### 2. Fill in the environment
 
 ```bash
-# App — transaction pooler (6543). src/db/index.ts sets prepare:false for it.
-DATABASE_URL=postgresql://postgres.<ref>:pass@aws-0-<region>.pooler.supabase.com:6543/postgres
-# Migrations — session pooler (5432); DDL and advisory locks need a real session.
+# App — session pooler (5432). One backend per connection, so it survives reuse.
+DATABASE_URL=postgresql://postgres.<ref>:pass@aws-0-<region>.pooler.supabase.com:5432/postgres
+# Migrations — the same session pooler; DDL and advisory locks need a real session.
 DIRECT_URL=postgresql://postgres.<ref>:pass@aws-0-<region>.pooler.supabase.com:5432/postgres
 AUTH_SECRET=…                          # generate with: npx auth secret
 ADMIN_EMAIL=admin@globifytech.com

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { isDatabaseConfigured } from '@/db'
+import { effectiveDatabaseUrl, isDatabaseConfigured } from '@/db'
 import { isAssistantConfigured } from '@/lib/support'
 
 export const runtime = 'nodejs'
@@ -51,16 +51,26 @@ export const dynamic = 'force-dynamic'
  * double-encoded value, useless for recovering the secret.
  */
 function describeConnection(): Record<string, unknown> {
-  const raw = process.env.DATABASE_URL?.trim()
+  /* The effective URL, not `process.env.DATABASE_URL`. `src/db/index.ts`
+     corrects a Supabase transaction-pooler port to the session pooler on the
+     way in, so the raw variable can name a port this process never opens. */
+  const raw = effectiveDatabaseUrl()
   if (!raw) return { set: false }
 
   try {
     const url = new URL(raw)
+    const configuredPort = new URL(process.env.DATABASE_URL!.trim()).port
+
     return {
       set: true,
       protocol: url.protocol.replace(':', ''),
       host: url.hostname,
       port: url.port || '(default)',
+      /* Present only when the two disagree, so it reads as a correction that
+         happened rather than as one more field to reconcile. */
+      ...(configuredPort && configuredPort !== url.port
+        ? { correctedFromPort: configuredPort }
+        : {}),
       user: decodeURIComponent(url.username),
       passwordChars: decodeURIComponent(url.password).length,
     }
