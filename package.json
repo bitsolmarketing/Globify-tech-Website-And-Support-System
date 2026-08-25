@@ -13,7 +13,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "assets": "node scripts/generate-images.mjs",
-    "prebuild": "node scripts/generate-images.mjs",
+    "prebuild": "node scripts/generate-images.mjs && node scripts/link-uploads.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
