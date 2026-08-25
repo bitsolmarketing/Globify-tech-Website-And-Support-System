@@ -24,6 +24,10 @@ next-env.d.ts
 # generated media (recreated by `npm run assets`)
 /public/images/generated
 
+# admin-uploaded media — lives only on the server's disk, deliberately not in
+# git (see scripts/deploy.sh's dirty-tree check, same reasoning as generated/)
+/public/images/uploads
+
 # misc
 .DS_Store
 *.pem

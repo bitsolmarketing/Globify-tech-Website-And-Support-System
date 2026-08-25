@@ -6,9 +6,26 @@ import { eq, sql } from 'drizzle-orm'
 
 import { getDb } from '@/db'
 import { testimonials } from '@/db/schema'
-import { runAction, type ActionResult } from '@/lib/admin/guard'
+import { requireAdmin, runAction, type ActionResult } from '@/lib/admin/guard'
+import { saveUploadedImage, type UploadResult } from '@/lib/admin/image-upload'
 import { testimonialFormSchema, type TestimonialFormValues } from '@/lib/admin/schemas'
 import { revalidateTestimonials } from '@/lib/data/revalidate'
+
+export async function uploadTestimonialAvatar(formData: FormData): Promise<UploadResult> {
+  try {
+    await requireAdmin()
+
+    const file = formData.get('file')
+    if (!(file instanceof File)) return { ok: false, error: 'No file was received.' }
+
+    return await saveUploadedImage(file, 'testimonials', { width: 400, height: 400 })
+  } catch (error) {
+    console.error('[admin] testimonial avatar upload failed', error)
+    const message =
+      error instanceof Error ? error.message : 'Could not process that image. Try a different file.'
+    return { ok: false, error: message }
+  }
+}
 
 function toInput(values: TestimonialFormValues) {
   const parsed = testimonialFormSchema.parse(values)

@@ -6,9 +6,26 @@ import { eq, sql } from 'drizzle-orm'
 
 import { getDb } from '@/db'
 import { authors, courses } from '@/db/schema'
-import { runAction, type ActionResult } from '@/lib/admin/guard'
+import { requireAdmin, runAction, type ActionResult } from '@/lib/admin/guard'
+import { saveUploadedImage, type UploadResult } from '@/lib/admin/image-upload'
 import { authorFormSchema, toAuthorInput, type AuthorFormValues } from '@/lib/admin/schemas'
 import { revalidateAuthors } from '@/lib/data/revalidate'
+
+export async function uploadAuthorAvatar(formData: FormData): Promise<UploadResult> {
+  try {
+    await requireAdmin()
+
+    const file = formData.get('file')
+    if (!(file instanceof File)) return { ok: false, error: 'No file was received.' }
+
+    return await saveUploadedImage(file, 'authors', { width: 400, height: 400 })
+  } catch (error) {
+    console.error('[admin] author avatar upload failed', error)
+    const message =
+      error instanceof Error ? error.message : 'Could not process that image. Try a different file.'
+    return { ok: false, error: message }
+  }
+}
 
 export async function createAuthor(values: AuthorFormValues): Promise<ActionResult> {
   return runAction(async () => {

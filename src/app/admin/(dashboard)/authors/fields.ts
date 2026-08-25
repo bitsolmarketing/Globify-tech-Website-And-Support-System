@@ -1,6 +1,8 @@
 import type { SimpleField } from '@/components/admin/simple-form'
 import type { AuthorFormValues } from '@/lib/admin/schemas'
 
+import { uploadAuthorAvatar } from './actions'
+
 /** Instructors double as blog authors, so one record feeds both. */
 export const authorFields: SimpleField<AuthorFormValues>[] = [
   {
@@ -20,9 +22,11 @@ export const authorFields: SimpleField<AuthorFormValues>[] = [
   },
   {
     name: 'avatar',
-    label: 'Avatar path',
+    label: 'Avatar',
+    type: 'image',
     required: true,
-    placeholder: '/images/generated/authors/usman-rafiq.webp',
+    uploadAction: uploadAuthorAvatar,
+    hint: 'Upload a photo, or paste an existing path.',
   },
   { name: 'yearsExperience', label: 'Years of experience', type: 'number', required: true, min: 0 },
   {

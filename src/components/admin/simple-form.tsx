@@ -2,7 +2,14 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { useForm, type DefaultValues, type FieldValues, type Path } from 'react-hook-form'
+import {
+  useController,
+  useForm,
+  type Control,
+  type DefaultValues,
+  type FieldValues,
+  type Path,
+} from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import type { ZodType } from 'zod'
 
@@ -14,9 +21,11 @@ import {
   TextField,
   TextareaField,
 } from '@/components/admin/form-fields'
+import { ImageUploadField } from '@/components/admin/image-upload-field'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toaster'
 import type { ActionResult } from '@/lib/admin/guard'
+import type { UploadResult } from '@/lib/admin/image-upload'
 
 /**
  * A declarative form for the flat CRUD resources (testimonials, FAQs, gallery
@@ -27,7 +36,7 @@ import type { ActionResult } from '@/lib/admin/guard'
 export type SimpleField<T extends FieldValues> = {
   name: Path<T>
   label: string
-  type?: 'text' | 'textarea' | 'number' | 'select' | 'checkbox' | 'email' | 'url' | 'date'
+  type?: 'text' | 'textarea' | 'number' | 'select' | 'checkbox' | 'email' | 'url' | 'date' | 'image'
   required?: boolean
   hint?: string
   placeholder?: string
@@ -38,6 +47,42 @@ export type SimpleField<T extends FieldValues> = {
   min?: number
   max?: number
   step?: string
+  /** Required when `type: 'image'` — a server action, so it's safe to pass from a server page. */
+  uploadAction?: (formData: FormData) => Promise<UploadResult>
+}
+
+/**
+ * `ImageUploadField` needs a controlled value, but `SimpleForm` otherwise
+ * uses uncontrolled `register()` fields — this is the one case that needs
+ * `useController`, pulled into its own component so the hook isn't called
+ * inside the `fields.map()` loop below.
+ */
+function ControlledImageField<T extends FieldValues>({
+  control,
+  field,
+  error,
+  className,
+}: {
+  control: Control<T>
+  field: SimpleField<T>
+  error?: string
+  className?: string
+}) {
+  const { field: controller } = useController({ control, name: field.name })
+
+  return (
+    <ImageUploadField
+      label={field.label}
+      required={field.required}
+      hint={field.hint}
+      value={(controller.value as string) ?? ''}
+      onChange={controller.onChange}
+      onBlur={controller.onBlur}
+      uploadAction={field.uploadAction!}
+      error={error}
+      className={className}
+    />
+  )
 }
 
 export function SimpleForm<T extends FieldValues>({
@@ -65,6 +110,7 @@ export function SimpleForm<T extends FieldValues>({
 
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<T>({
@@ -96,6 +142,18 @@ export function SimpleForm<T extends FieldValues>({
             const error = (errors as Record<string, { message?: string } | undefined>)[field.name]
               ?.message
             const span = field.full || field.type === 'textarea' ? 'sm:col-span-2' : undefined
+
+            if (field.type === 'image') {
+              return (
+                <ControlledImageField
+                  key={String(field.name)}
+                  control={control}
+                  field={field}
+                  error={error}
+                  className={span}
+                />
+              )
+            }
 
             if (field.type === 'textarea') {
               return (

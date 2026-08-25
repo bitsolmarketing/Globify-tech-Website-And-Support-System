@@ -1,6 +1,8 @@
 import type { SimpleField } from '@/components/admin/simple-form'
 import type { GalleryFormValues } from '@/lib/admin/schemas'
 
+import { uploadGalleryImage } from './actions'
+
 const CATEGORY_OPTIONS = ['Campus', 'Classes', 'Events', 'Students'].map((value) => ({
   value,
   label: value,
@@ -9,11 +11,12 @@ const CATEGORY_OPTIONS = ['Campus', 'Classes', 'Events', 'Students'].map((value)
 export const galleryFields: SimpleField<GalleryFormValues>[] = [
   {
     name: 'src',
-    label: 'Image path',
+    label: 'Image',
+    type: 'image',
     required: true,
     full: true,
-    placeholder: '/images/generated/gallery/gallery-01.webp',
-    hint: 'Files live in public/. Run `npm run assets` after adding new source images.',
+    uploadAction: uploadGalleryImage,
+    hint: 'Upload a photo, or paste an existing path.',
   },
   {
     name: 'alt',

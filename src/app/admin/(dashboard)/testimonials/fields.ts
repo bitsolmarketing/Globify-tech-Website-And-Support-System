@@ -1,6 +1,8 @@
 import type { SimpleField } from '@/components/admin/simple-form'
 import type { TestimonialFormValues } from '@/lib/admin/schemas'
 
+import { uploadTestimonialAvatar } from './actions'
+
 /** Shared by the create and edit screens so the two cannot drift apart. */
 export const testimonialFields: SimpleField<TestimonialFormValues>[] = [
   { name: 'name', label: 'Student name', required: true, placeholder: 'Muhammad Hamza' },
@@ -16,9 +18,11 @@ export const testimonialFields: SimpleField<TestimonialFormValues>[] = [
   { name: 'city', label: 'City', required: true, placeholder: 'Faisalabad' },
   {
     name: 'avatar',
-    label: 'Avatar path',
+    label: 'Avatar',
+    type: 'image',
     required: true,
-    placeholder: '/images/generated/students/student-01.webp',
+    uploadAction: uploadTestimonialAvatar,
+    hint: 'Upload a photo, or paste an existing path.',
   },
   { name: 'rating', label: 'Rating (1–5)', type: 'number', required: true, min: 1, max: 5 },
   { name: 'outcome', label: 'Outcome', required: true, placeholder: 'Earning $1,800+/month' },
