@@ -4,15 +4,15 @@ import { eq } from 'drizzle-orm'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
 import { DeleteButton } from '@/components/admin/delete-button'
-import { SimpleForm } from '@/components/admin/simple-form'
 import { getDb } from '@/db'
 import { faqs } from '@/db/schema'
-import { faqFormSchema, type FaqFormValues } from '@/lib/admin/schemas'
+import { type FaqFormValues } from '@/lib/admin/schemas'
 import { getFaqCategories } from '@/lib/data/content'
 import { truncate } from '@/lib/utils'
 
 import { deleteFaq, updateFaq } from '../actions'
 import { faqFields } from '../fields'
+import { FaqForm } from '../faq-form'
 
 type Params = { id: string }
 
@@ -63,8 +63,7 @@ export default async function EditFaqPage({ params }: { params: Promise<Params> 
         }
       />
 
-      <SimpleForm
-        schema={faqFormSchema}
+      <FaqForm
         fields={faqFields(categories)}
         sectionTitle="Question and answer"
         defaultValues={{

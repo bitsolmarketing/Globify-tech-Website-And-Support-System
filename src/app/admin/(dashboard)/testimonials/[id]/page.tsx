@@ -4,13 +4,13 @@ import { eq } from 'drizzle-orm'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
 import { DeleteButton } from '@/components/admin/delete-button'
-import { SimpleForm } from '@/components/admin/simple-form'
 import { getDb } from '@/db'
 import { testimonials } from '@/db/schema'
-import { testimonialFormSchema, type TestimonialFormValues } from '@/lib/admin/schemas'
+import { type TestimonialFormValues } from '@/lib/admin/schemas'
 
 import { deleteTestimonial, updateTestimonial } from '../actions'
 import { testimonialFields } from '../fields'
+import { TestimonialForm } from '../testimonial-form'
 
 type Params = { id: string }
 
@@ -62,8 +62,7 @@ export default async function EditTestimonialPage({ params }: { params: Promise<
         }
       />
 
-      <SimpleForm
-        schema={testimonialFormSchema}
+      <TestimonialForm
         fields={testimonialFields}
         sectionTitle="Student quote"
         defaultValues={{

@@ -1,10 +1,9 @@
 import type { Metadata } from 'next'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
-import { SimpleForm } from '@/components/admin/simple-form'
-import { authorFormSchema } from '@/lib/admin/schemas'
 
 import { createAuthor } from '../actions'
+import { AuthorForm } from '../author-form'
 import { authorFields } from '../fields'
 
 export const metadata: Metadata = { title: 'New author' }
@@ -19,8 +18,7 @@ export default function NewAuthorPage() {
         backLabel="All authors"
       />
 
-      <SimpleForm
-        schema={authorFormSchema}
+      <AuthorForm
         fields={authorFields}
         sectionTitle="Instructor profile"
         defaultValues={{

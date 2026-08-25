@@ -4,12 +4,12 @@ import { eq } from 'drizzle-orm'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
 import { DeleteButton } from '@/components/admin/delete-button'
-import { SimpleForm } from '@/components/admin/simple-form'
 import { getDb } from '@/db'
 import { authors } from '@/db/schema'
-import { authorFormSchema, fromLines, type AuthorFormValues } from '@/lib/admin/schemas'
+import { fromLines, type AuthorFormValues } from '@/lib/admin/schemas'
 
 import { deleteAuthor, updateAuthor } from '../actions'
+import { AuthorForm } from '../author-form'
 import { authorFields } from '../fields'
 
 type Params = { id: string }
@@ -57,8 +57,7 @@ export default async function EditAuthorPage({ params }: { params: Promise<Param
         }
       />
 
-      <SimpleForm
-        schema={authorFormSchema}
+      <AuthorForm
         fields={authorFields}
         sectionTitle="Instructor profile"
         defaultValues={{

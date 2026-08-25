@@ -4,13 +4,13 @@ import { eq } from 'drizzle-orm'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
 import { DeleteButton } from '@/components/admin/delete-button'
-import { SimpleForm } from '@/components/admin/simple-form'
 import { getDb } from '@/db'
 import { galleryItems } from '@/db/schema'
-import { galleryFormSchema, type GalleryFormValues } from '@/lib/admin/schemas'
+import { type GalleryFormValues } from '@/lib/admin/schemas'
 
 import { deleteGalleryItem, updateGalleryItem } from '../actions'
 import { galleryFields } from '../fields'
+import { GalleryForm } from '../gallery-form'
 
 type Params = { id: string }
 
@@ -62,8 +62,7 @@ export default async function EditGalleryItemPage({ params }: { params: Promise<
         }
       />
 
-      <SimpleForm
-        schema={galleryFormSchema}
+      <GalleryForm
         fields={galleryFields}
         sectionTitle="Image"
         defaultValues={{
