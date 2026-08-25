@@ -92,7 +92,7 @@ export function ContactForm({ courseOptions, defaultCourse, className }: Props) 
         <h3 className="font-sans text-xl font-bold text-brand-900">Thank you — message received</h3>
         <p className="max-w-sm text-ink-600">
           Our admissions team will contact you within one working day to confirm your batch, timing
-          and the 50% Azadi discount.
+          and the 50% discount.
         </p>
         <Button variant="secondary" size="md" onClick={() => setSubmitted(false)}>
           Send another message

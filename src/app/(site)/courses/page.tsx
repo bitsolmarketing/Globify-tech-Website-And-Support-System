@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { ArrowRight, BadgeCheck, Clock, Users } from 'lucide-react'
 
 import { CourseCatalogue } from '@/components/courses/course-catalogue'
@@ -20,17 +21,15 @@ import {
   graph,
   webPageSchema,
 } from '@/lib/schema'
-import { formatDayMonthLong } from '@/lib/utils'
-
-const TITLE = 'All Courses — 50% OFF Azadi Sale'
+const TITLE = 'All Courses — 50% OFF'
 const DESCRIPTION =
-  'Browse all 14 professional courses at Globify Tech Institute Faisalabad — AI, Web Development, Digital Marketing, Graphic Designing, Video Editing, Amazon, Shopify and more. Flat 50% OFF until 14 August.'
+  'Browse all 14 professional courses at Globify Tech Institute Faisalabad — AI, Web Development, Digital Marketing, Graphic Designing, Video Editing, Amazon, Shopify and more. Flat 50% OFF for a limited time.'
 
 export const metadata: Metadata = buildMetadata({
   title: TITLE,
   description: DESCRIPTION,
   path: '/courses',
-  image: `/api/og?title=${encodeURIComponent('All Courses — 50% OFF')}&eyebrow=${encodeURIComponent('Azadi Sale')}&meta=${encodeURIComponent('14 professional programmes')}`,
+  image: `/api/og?title=${encodeURIComponent('All Courses — 50% OFF')}&eyebrow=${encodeURIComponent('Limited-Time Offer')}&meta=${encodeURIComponent('14 professional programmes')}`,
   keywords: [
     'IT courses Faisalabad',
     'computer courses Faisalabad',
@@ -51,8 +50,6 @@ export default async function CoursesPage() {
     getFaqs(),
   ])
 
-  const deadlineLabel = formatDayMonthLong(campaign.deadline)
-
   const HIGHLIGHTS = [
     {
       icon: BadgeCheck,
@@ -68,7 +65,7 @@ export default async function CoursesPage() {
   ]
 
   const courseFaqs = allFaqs.filter((faq) =>
-    ['Azadi Sale', 'Admissions', 'Fees & Payment'].includes(faq.category),
+    ['Course Discount', 'Admissions', 'Fees & Payment'].includes(faq.category),
   )
 
   return (
@@ -80,7 +77,7 @@ export default async function CoursesPage() {
             Every course, <span className="text-gradient-gold">half price</span>
           </>
         }
-        description={`All ${courseStats.total} professional programmes are ${campaign.discountPercent}% off until ${deadlineLabel}. Project-based, taught by working professionals, with certification, internship and job assistance included.`}
+        description={`All ${courseStats.total} professional programmes are ${campaign.discountPercent}% off for a limited time. Project-based, taught by working professionals, with certification, internship and job assistance included.`}
         crumbs={CRUMBS}
         aside={
           <ul className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
@@ -121,7 +118,9 @@ export default async function CoursesPage() {
 
       <section aria-label="Course catalogue" className="section-y">
         <div className="container-page">
-          <CourseCatalogue courses={courses} discountPercent={campaign.discountPercent} />
+          <Suspense fallback={null}>
+            <CourseCatalogue courses={courses} discountPercent={campaign.discountPercent} />
+          </Suspense>
         </div>
       </section>
 
@@ -130,7 +129,7 @@ export default async function CoursesPage() {
       <FaqSection
         faqs={courseFaqs}
         eyebrow="Before you enroll"
-        title="Admissions, fees and the Azadi discount"
+        title="Admissions, fees and the current discount"
         description="The questions our admissions team is asked most often during the sale."
         className="bg-white"
         headingId="courses-faq-heading"

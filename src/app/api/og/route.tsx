@@ -1,6 +1,13 @@
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+
 import { ImageResponse } from 'next/og'
 
 import { campaign, siteConfig } from '@/lib/site'
+
+const logoMarkDataUrl = readFile(
+  path.join(process.cwd(), 'public/images/brand/logo-mark.png'),
+).then((buf) => `data:image/png;base64,${buf.toString('base64')}`)
 
 /* The OG image is generated per-request at the edge and cannot await the
    database, so the badge falls back to the seeded campaign literal when a
@@ -24,11 +31,13 @@ export async function GET(request: Request) {
 
   const title = (searchParams.get('title') ?? siteConfig.tagline).slice(0, 110)
   const eyebrow = (searchParams.get('eyebrow') ?? siteConfig.name).slice(0, 60)
-  const badge = (searchParams.get('badge') ?? `${campaign.discountPercent}% OFF · Azadi Sale`).slice(0, 40)
+  const badge = (searchParams.get('badge') ?? `${campaign.discountPercent}% OFF · ${campaign.name}`).slice(0, 40)
   const meta = (searchParams.get('meta') ?? 'Faisalabad, Pakistan').slice(0, 70)
 
   // Keep long headlines legible by stepping the size down.
   const titleSize = title.length > 78 ? 54 : title.length > 48 ? 64 : 76
+
+  const logoSrc = await logoMarkDataUrl
 
   return new ImageResponse(
     (
@@ -40,7 +49,7 @@ export async function GET(request: Request) {
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '64px 72px',
-          background: 'linear-gradient(135deg, #012a12 0%, #01411c 48%, #05603a 100%)',
+          background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 48%, #4338ca 100%)',
           position: 'relative',
         }}
       >
@@ -53,7 +62,7 @@ export async function GET(request: Request) {
             width: 520,
             height: 520,
             borderRadius: 9999,
-            background: 'rgba(212,175,55,0.18)',
+            background: 'rgba(168,85,247,0.18)',
             display: 'flex',
           }}
         />
@@ -65,7 +74,7 @@ export async function GET(request: Request) {
             width: 520,
             height: 520,
             borderRadius: 9999,
-            background: 'rgba(5,150,105,0.20)',
+            background: 'rgba(99,102,241,0.20)',
             display: 'flex',
           }}
         />
@@ -85,16 +94,9 @@ export async function GET(request: Request) {
                 justifyContent: 'center',
               }}
             >
-              <svg width="42" height="42" viewBox="0 0 48 48">
-                <path
-                  d="M31.2 15.4a10.2 10.2 0 1 0 0 17.2 12.1 12.1 0 1 1 0-17.2Z"
-                  fill="#d4af37"
-                />
-                <path
-                  d="m33.9 20.1 1.34 2.9 3.16.38-2.34 2.16.63 3.12-2.79-1.56-2.79 1.56.63-3.12-2.34-2.16 3.16-.38z"
-                  fill="#d4af37"
-                />
-              </svg>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={logoSrc} width={42} height={42} alt="" />
+
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontSize: 30, fontWeight: 800, color: '#ffffff', letterSpacing: -0.5 }}>
@@ -120,8 +122,8 @@ export async function GET(request: Request) {
               alignItems: 'center',
               padding: '12px 24px',
               borderRadius: 9999,
-              background: 'linear-gradient(135deg, #f4e3a2, #d4af37)',
-              color: '#012a12',
+              background: 'linear-gradient(135deg, #e9d5ff, #a855f7)',
+              color: '#1e1b4b',
               fontSize: 22,
               fontWeight: 800,
             }}
@@ -136,7 +138,7 @@ export async function GET(request: Request) {
             style={{
               fontSize: 22,
               fontWeight: 700,
-              color: '#d4af37',
+              color: '#c084fc',
               letterSpacing: 3,
               textTransform: 'uppercase',
             }}

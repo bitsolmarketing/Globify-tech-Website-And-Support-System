@@ -60,7 +60,7 @@ const STATIC_PAGES: SearchDoc[] = [
   },
   {
     title: 'Frequently Asked Questions',
-    description: 'Admissions, fees, certification, batch timings, refunds and the Azadi discount.',
+    description: 'Admissions, fees, certification, batch timings, refunds and the current discount.',
     href: '/faqs',
     type: 'Page',
     meta: 'Support',

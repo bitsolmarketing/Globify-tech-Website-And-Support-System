@@ -62,7 +62,7 @@ const CAPABILITIES = [
   {
     icon: Sparkles,
     title: 'Fees and discounts',
-    body: 'What a course costs, what the Azadi discount brings it down to, and which instalment options apply.',
+    body: 'What a course costs, what the current discount brings it down to, and which instalment options apply.',
   },
   {
     icon: Clock,
@@ -81,7 +81,7 @@ export default async function SupportPage() {
   const assistantReady = isAssistantConfigured()
 
   const whatsappHref = `https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(
-    `Assalam o Alaikum! I have a question about the ${campaign.discountPercent}% OFF ${campaign.name} and your courses.`,
+    `Assalam o Alaikum! I have a question about the ${campaign.discountPercent}% OFF offer and your courses.`,
   )}`
 
   return (

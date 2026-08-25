@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { Campaign } from '@/lib/data/campaign'
 import { contactInfo, mainNav, type NavItem } from '@/lib/site'
-import { cn, formatDayMonthLong } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 export function Navbar({ campaign }: { campaign: Campaign }) {
   const pathname = usePathname()
@@ -85,9 +85,6 @@ export function Navbar({ campaign }: { campaign: Campaign }) {
             <span className="hidden sm:inline">{campaign.name} —</span>
             <span className="text-gradient-gold font-extrabold">
               {campaign.discountPercent}% OFF ALL COURSES
-            </span>
-            <span className="hidden text-white/60 md:inline">
-              · Offer ends {formatDayMonthLong(campaign.deadline)}
             </span>
             <Link
               href="/courses"
@@ -357,8 +354,7 @@ function MobileMenu({
 
         <div className="flex-1 overflow-y-auto overscroll-contain p-5">
           <Badge variant="gold" size="md" className="mb-5">
-            {campaign.emoji} {campaign.discountPercent}% OFF — ends{' '}
-            {formatDayMonthLong(campaign.deadline)}
+            {campaign.emoji} {campaign.discountPercent}% OFF — limited time
           </Badge>
 
           <ul className="flex flex-col gap-1">

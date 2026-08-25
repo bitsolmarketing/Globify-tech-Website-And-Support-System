@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 
 import { Achievements } from '@/components/home/achievements'
+import { AiFuture } from '@/components/home/ai-future'
 import { Benefits } from '@/components/home/benefits'
+import { CareerPaths } from '@/components/home/career-paths'
 import { ContactSection } from '@/components/home/contact-section'
 import { FaqSection } from '@/components/home/faq-section'
 import { FeaturedCourses } from '@/components/home/featured-courses'
@@ -10,6 +12,7 @@ import { Hero } from '@/components/home/hero'
 import { LatestBlogs } from '@/components/home/latest-blogs'
 import { SpecialOffer } from '@/components/home/special-offer'
 import { Testimonials } from '@/components/home/testimonials'
+import { TrustStrip } from '@/components/home/trust-strip'
 import { WhyGlobify } from '@/components/home/why-globify'
 import { JsonLd } from '@/components/seo/json-ld'
 import { getCampaign } from '@/lib/data/campaign'
@@ -26,9 +29,8 @@ import {
 import { siteConfig } from '@/lib/site'
 
 export const metadata: Metadata = buildMetadata({
-  title: `50% OFF Azadi Sale — IT & Skills Courses in Faisalabad`,
-  description:
-    'Celebrate Independence Day with 50% OFF every course at Globify Tech Institute Faisalabad — AI, Digital Marketing, Web Development, Graphic Designing, Freelancing and more. Offer ends 14 August.',
+  title: `${siteConfig.tagline} — AI, Marketing, Design & Development Courses in Faisalabad`,
+  description: siteConfig.description,
   path: '/',
   keywords: [...siteConfig.keywords],
 })
@@ -43,12 +45,15 @@ export default async function HomePage() {
   return (
     <>
       <Hero />
+      <TrustStrip />
+      <CareerPaths />
       <FeaturedCourses />
-      <Benefits />
       <WhyGlobify />
-      <Testimonials />
+      <Benefits />
       <Achievements />
+      <Testimonials />
       <GalleryPreview />
+      <AiFuture />
       <SpecialOffer />
       <FaqSection faqs={homepageFaqs} className="bg-white" />
       <LatestBlogs />
@@ -58,7 +63,7 @@ export default async function HomePage() {
         id="home-schema"
         data={graph(
           webPageSchema({
-            title: `${siteConfig.name} — 50% OFF Azadi Sale`,
+            title: `${siteConfig.name} — ${siteConfig.tagline}`,
             description: siteConfig.description,
             path: '/',
           }),

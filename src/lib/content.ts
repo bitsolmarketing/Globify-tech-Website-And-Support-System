@@ -245,7 +245,7 @@ export const stats: Stat[] = [
     value: 8500,
     suffix: '+',
     label: 'Students Trained',
-    description: 'Graduates across 14 professional programmes since 2019',
+    description: `Graduates across ${seedCourseStats.total} professional programmes since 2019`,
     icon: 'Users',
   },
   {
@@ -560,25 +560,25 @@ export type Faq = { question: string; answer: string; category: string }
 
 export const faqs: Faq[] = [
   {
-    category: 'Azadi Sale',
-    question: 'What exactly is included in the 14 August Azadi Sale?',
+    category: 'Course Discount',
+    question: 'What exactly is included in the course discount?',
     answer:
       'A flat 50% discount on the full fee of every course we offer — all 14 programmes, all batch timings, on-campus and online. There is no minimum, no restricted list and no hidden registration charge. The discounted fee shown on each course page is the total amount you pay.',
   },
   {
-    category: 'Azadi Sale',
-    question: 'When does the Azadi Sale end?',
+    category: 'Course Discount',
+    question: 'Is this a limited-time offer?',
     answer:
-      'The offer closes at 11:59 PM on 14 August. Enrolments confirmed before that deadline keep the discounted rate even if your batch starts in September. After the deadline, standard fees apply.',
+      'The discounted rate applies at the time you confirm your enrolment. Pricing can change, so we recommend locking in your rate now rather than waiting.',
   },
   {
-    category: 'Azadi Sale',
+    category: 'Course Discount',
     question: 'Can I reserve my seat now and start a later batch?',
     answer:
-      'Yes. Pay or confirm your enrolment before 14 August and you lock the 50% rate. You can then join any batch starting within the next three months, which is what most working students do.',
+      'Yes. Pay or confirm your enrolment and you lock the 50% rate. You can then join any batch starting within the next three months, which is what most working students do.',
   },
   {
-    category: 'Azadi Sale',
+    category: 'Course Discount',
     question: 'Can the discount be combined with an instalment plan?',
     answer:
       'Yes. Courses of three months or longer can be paid in two or three instalments, and the 50% discount applies to the total before it is split. Speak to admissions and we will structure it around your situation.',
@@ -680,8 +680,8 @@ export const faqCategories = Array.from(new Set(faqs.map((f) => f.category)))
 /** Compact set used on the homepage — one from each category plus the offer. */
 export const homepageFaqs = faqs.filter((f) =>
   [
-    'What exactly is included in the 14 August Azadi Sale?',
-    'When does the Azadi Sale end?',
+    'What exactly is included in the course discount?',
+    'Is this a limited-time offer?',
     'Are classes online or on campus?',
     'Is the certificate recognised?',
     'Do you guarantee a job?',

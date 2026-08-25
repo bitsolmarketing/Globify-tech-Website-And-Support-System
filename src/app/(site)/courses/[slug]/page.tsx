@@ -24,7 +24,6 @@ import {
 
 import { CourseCard } from '@/components/courses/course-card'
 import { ContactForm } from '@/components/forms/contact-form'
-import { CountdownTimer } from '@/components/home/countdown-timer'
 import { FaqSection } from '@/components/home/faq-section'
 import { JsonLd } from '@/components/seo/json-ld'
 import { PageHero } from '@/components/shared/page-hero'
@@ -34,7 +33,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { resolveAuthor } from '@/lib/data/authors'
-import { computeTimeLeft } from '@/lib/countdown'
 import { discountedFee, savings } from '@/lib/courses'
 import { getCampaign } from '@/lib/data/campaign'
 import {
@@ -110,9 +108,6 @@ export default async function CourseDetailPage({ params }: { params: Promise<Par
 
   const price = discountedFee(course, campaign.discountPercent)
   const saved = savings(course, campaign.discountPercent)
-  const deadline = campaign.deadline
-  const initial = computeTimeLeft(deadline.getTime(), Date.now())
-
   const crumbs = [
     { name: 'Courses', href: '/courses' },
     { name: course.shortTitle, href: `/courses/${course.slug}` },
@@ -173,18 +168,6 @@ export default async function CourseDetailPage({ params }: { params: Promise<Par
               You save {formatPKR(saved)} · code {campaign.couponCode}
             </p>
 
-            <div className="mt-6">
-              <p className="mb-2.5 font-sans text-[0.625rem] font-bold tracking-[0.16em] text-white/40 uppercase">
-                Offer ends in
-              </p>
-              <CountdownTimer
-                deadline={deadline.toISOString()}
-                initial={initial}
-                tone="light"
-                compact
-              />
-            </div>
-
             <div className="mt-6 grid gap-2.5">
               <Button asChild variant="gold" size="lg">
                 <Link href="#enroll">
@@ -195,7 +178,7 @@ export default async function CourseDetailPage({ params }: { params: Promise<Par
               <Button asChild variant="outline-light" size="lg">
                 <a
                   href={`https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(
-                    `Assalam o Alaikum! I want details about the ${course.title} course with the ${campaign.discountPercent}% Azadi discount.`,
+                    `Assalam o Alaikum! I want details about the ${course.title} course with the ${campaign.discountPercent}% discount.`,
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -526,7 +509,7 @@ export default async function CourseDetailPage({ params }: { params: Promise<Par
                 <span className="text-gradient-brand">{formatPKR(price)}</span>
               </>
             }
-            description={`Fill this in and our admissions team will confirm your batch, timing and the ${campaign.discountPercent}% Azadi discount within one working day.`}
+            description={`Fill this in and our admissions team will confirm your batch, timing and the ${campaign.discountPercent}% discount within one working day.`}
           />
 
           <Card className="mx-auto mt-10 max-w-2xl p-7 sm:p-10">

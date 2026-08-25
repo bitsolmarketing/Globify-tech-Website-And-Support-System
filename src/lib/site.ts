@@ -27,8 +27,8 @@ export const siteConfig = {
     'graphic designing institute',
     'Amazon course Faisalabad',
     'Shopify course Pakistan',
-    'Azadi sale courses',
-    '14 August sale 50% off courses',
+    'discounted IT courses Faisalabad',
+    '50% off professional courses Pakistan',
     'Globify Tech Institute',
   ],
 } as const
@@ -136,13 +136,13 @@ export type CampaignSettings = {
 }
 
 export const campaign = {
-  name: '14 August Azadi Sale',
-  emoji: '🇵🇰',
+  name: 'Special Course Discount',
+  emoji: '✨',
   discountPercent: 50,
-  headline: 'Celebrate Independence by Investing in Your Future',
+  headline: 'Invest in Skills That Pay You Back',
   subheadline:
     'Get 50% OFF on AI, Digital Marketing, Web Development, Graphic Designing, Video Editing, Python, Freelancing, Shopify, Amazon and many more courses.',
-  couponCode: 'AZADI50',
+  couponCode: 'SAVE50',
   timezoneOffset: '+05:00',
   seatsTotal: 300,
   seatsRemaining: 47,
@@ -225,16 +225,16 @@ export const mainNav: NavItem[] = [
         },
       ],
       feature: {
-        title: '🇵🇰 Azadi Sale — 50% OFF',
-        body: 'Every course, every batch. Offer ends 14 August. Seats are limited and filling fast.',
+        title: '✨ Limited-Time Offer — 50% OFF',
+        body: 'Every course, every batch. Seats are limited and filling fast.',
         href: '/courses',
         cta: 'Claim 50% discount',
       },
     },
   },
   { label: 'Why Us', href: '/why-choose-us' },
-  { label: 'Success Stories', href: '/success-stories' },
-  { label: 'Gallery', href: '/gallery' },
+  { label: 'Student Success', href: '/success-stories' },
+  { label: 'Campus', href: '/gallery' },
   { label: 'Blog', href: '/blog' },
   { label: 'Contact', href: '/contact' },
 ]
@@ -260,7 +260,7 @@ export const footerNav = {
   ],
   resources: [
     { label: 'Blog', href: '/blog' },
-    { label: 'Azadi Sale 50% OFF', href: '/blog/14-august-azadi-sale-50-percent-off-professional-courses' },
+    { label: 'Course Discount Guide', href: '/blog/50-percent-off-professional-courses-guide' },
     { label: 'Freelancing Roadmap', href: '/blog/freelancing-roadmap-for-beginners' },
     { label: 'Digital Marketing Career Guide', href: '/blog/digital-marketing-career-guide' },
     { label: 'Search the site', href: '/search' },

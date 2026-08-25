@@ -9,7 +9,7 @@ import { getCategories, getFeaturedPosts, getTags } from '@/lib/blog'
 import { discountedFee } from '@/lib/courses'
 import { getCampaign } from '@/lib/data/campaign'
 import { getCourseStats, getFeaturedCourses } from '@/lib/data/courses'
-import { formatDayMonthLong, formatPKR } from '@/lib/utils'
+import { formatPKR } from '@/lib/utils'
 import { BlogCard } from '@/components/blog/blog-card'
 
 export async function BlogSidebar({ activeCategory }: { activeCategory?: string }) {
@@ -32,7 +32,7 @@ export async function BlogSidebar({ activeCategory }: { activeCategory?: string 
           {campaign.emoji} {campaign.discountPercent}% OFF
         </Badge>
         <h2 className="mt-3 font-sans text-lg leading-snug font-bold text-white">
-          {campaign.name} ends {formatDayMonthLong(campaign.deadline)}
+          {campaign.name}
         </h2>
         <p className="mt-2 text-[0.9375rem] leading-relaxed text-white/65">
           {campaign.discountPercent}% off all {courseStats.total} professional courses.

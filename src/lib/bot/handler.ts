@@ -26,7 +26,6 @@ import {
   asCaptureState,
   asPendingOptions,
   beginCapture,
-  busyNotice,
   cancelled,
   confirmation,
   courseDetails,
@@ -160,6 +159,19 @@ async function route(message: InboundMessage): Promise<void> {
      most common visitor of all is the one who asks a question and drifts off,
      and they are exactly who the admissions team needs to be able to call. */
   await noteLead(context, message.text)
+
+  /* On WhatsApp, any typed text at all shows the menu — cancelling whatever
+     else was in progress, including a half-finished capture. Ads send
+     unpredictable replies that rarely match a known intent, and the menu is
+     the one answer guaranteed to land instead of risking a dead end. Button
+     taps (kind 'reply') are untouched — this only catches free text. */
+  if (isWhatsApp && message.kind === 'text') {
+    await clearCapture(conversation.id)
+    return sayMenu(
+      context,
+      GREETINGS.includes(lowered) ? welcome(context.language) : helpMenu(context.language),
+    )
+  }
 
   /* A greeting resets, even mid-capture. Below the capture check it would be
      read as an answer to whatever question is outstanding and rejected, leaving
@@ -447,7 +459,11 @@ async function answerWithModel(context: Context, message: string): Promise<void>
     history,
   )
 
-  if (!text) return say(context, busyNotice(context.language))
+  /* The model failing must never read as the bot being broken — ads are
+     driving this traffic, and a visitor who sees an apology disengages instead
+     of converting. Falling back to the human-handoff reply keeps the reply
+     warm and flags the conversation for a real person instead. */
+  if (!text) return escalate(context)
   return say(context, text, quickActions(context.language))
 }
 

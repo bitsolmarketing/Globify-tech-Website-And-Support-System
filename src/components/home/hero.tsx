@@ -15,13 +15,12 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
-import { CountdownTimer } from '@/components/home/countdown-timer'
-import { computeTimeLeft } from '@/lib/countdown'
 import { Floating } from '@/components/shared/reveal'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getCampaign } from '@/lib/data/campaign'
 import { getCourseStats } from '@/lib/data/courses'
+import { courseCategories } from '@/lib/courses'
 import { trustBadges } from '@/lib/content'
 
 const BADGE_ICONS: Record<string, LucideIcon> = {
@@ -42,10 +41,6 @@ const FLOATING_CHIPS: { icon: LucideIcon; label: string; position: string; delay
 
 export async function Hero() {
   const [campaign, courseStats] = await Promise.all([getCampaign(), getCourseStats()])
-
-  /* Deadline resolved once on the server so SSR and hydration agree exactly. */
-  const deadline = campaign.deadline
-  const initial = computeTimeLeft(deadline.getTime(), Date.now())
 
   return (
     <section
@@ -90,15 +85,9 @@ export async function Hero() {
           {/* ------------------------------------------------------ Copy */}
           <div className="mx-auto max-w-2xl text-center lg:mx-0 lg:text-left">
             <div className="flex justify-center lg:justify-start">
-              <Badge
-                variant="light"
-                size="lg"
-                className="animate-float-slow border-gold-400/30 bg-gold-500/12"
-              >
-                <span aria-hidden className="text-base leading-none">
-                  {campaign.emoji}
-                </span>
-                {campaign.name} · Limited Seats
+              <Badge variant="light" size="lg" className="border-gold-400/30 bg-gold-500/12">
+                <Sparkles aria-hidden className="size-4 text-gold-400" />
+                The Future of Learning Is Here
               </Badge>
             </div>
 
@@ -106,41 +95,44 @@ export async function Hero() {
               id="hero-heading"
               className="mt-6 text-4xl leading-[1.08] text-white sm:text-5xl lg:text-6xl xl:text-[4.25rem]"
             >
-              Celebrate Independence by{' '}
-              <span className="text-gradient-gold">Investing in Your Future</span>
+              Build Skills That{' '}
+              <span className="text-gradient-gold">Build Your Future</span>
             </h1>
 
             <p className="mt-6 text-lg leading-relaxed text-white/72 sm:text-xl">
-              Get <strong className="font-bold text-gold-400">50% OFF</strong> on AI, Digital
-              Marketing, Web Development, Graphic Designing, Video Editing, Python, Freelancing,
-              Shopify, Amazon and many more courses.
+              Learn {courseCategories.slice(0, -1).join(', ')} and{' '}
+              {courseCategories[courseCategories.length - 1]} through practical,
+              industry-focused programmes — {courseStats.total} courses, AI-powered curriculum,
+              real projects and career support.
             </p>
-
-            {/* -------------------------------------------------- Countdown */}
-            <div className="mt-8">
-              <p className="mb-3 font-sans text-[0.6875rem] font-bold tracking-[0.16em] text-white/45 uppercase">
-                Offer ends 14 August · 11:59 PM PKT
-              </p>
-              <CountdownTimer
-                deadline={deadline.toISOString()}
-                initial={initial}
-                tone="light"
-                className="mx-auto max-w-md lg:mx-0"
-              />
-            </div>
 
             {/* ------------------------------------------------------- CTAs */}
             <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
               <Button asChild variant="gold" size="xl">
-                <Link href="/contact#enroll">
-                  Enroll Now
+                <Link href="/courses">
+                  Explore Courses
                   <ArrowRight aria-hidden />
                 </Link>
               </Button>
               <Button asChild variant="outline-light" size="xl">
-                <Link href="/courses">Explore Courses</Link>
+                <Link href="/contact">Book Free Counselling</Link>
               </Button>
             </div>
+
+            {/* --------------------------------------------- Trust indicators */}
+            <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 lg:justify-start">
+              {['Practical Learning', 'Industry-Focused', 'AI-Powered Curriculum', 'Career Support'].map(
+                (item) => (
+                  <li
+                    key={item}
+                    className="flex items-center gap-2 font-sans text-[0.8125rem] font-semibold text-white/65"
+                  >
+                    <BadgeCheck aria-hidden className="size-4 text-gold-400" />
+                    {item}
+                  </li>
+                ),
+              )}
+            </ul>
 
             {/* ------------------------------------------------ Social proof */}
             <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
@@ -166,13 +158,19 @@ export async function Hero() {
               />
 
               <div className="relative">
-                <p className="font-sans text-[0.6875rem] font-bold tracking-[0.16em] text-gold-400 uppercase">
-                  Azadi Sale Pricing
-                </p>
+                <div className="flex items-center gap-2">
+                  <span aria-hidden className="text-base leading-none">
+                    {campaign.emoji}
+                  </span>
+                  <p className="font-sans text-[0.6875rem] font-bold tracking-[0.16em] text-gold-400 uppercase">
+                    Limited-Time Offer · {campaign.name}
+                  </p>
+                </div>
 
                 <div className="mt-4 flex items-end gap-3">
                   <span className="font-sans text-6xl leading-none font-extrabold text-white sm:text-7xl">
-                    50<span className="text-gold-400">%</span>
+                    {campaign.discountPercent}
+                    <span className="text-gold-400">%</span>
                   </span>
                   <span className="pb-2 font-sans text-lg font-bold text-white/70">OFF</span>
                 </div>

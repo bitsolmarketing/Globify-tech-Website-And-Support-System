@@ -30,7 +30,7 @@ const STORAGE_KEY = 'globify.support.chat.v1'
 
 const DEFAULT_SUGGESTIONS = [
   'Which course suits me if I am a beginner?',
-  'What are the fees and the 50% Azadi discount?',
+  'What are the fees and the 50% discount?',
   'What are the batch timings?',
   'Do you help with jobs after the course?',
 ]

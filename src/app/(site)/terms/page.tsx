@@ -68,9 +68,8 @@ const SECTIONS: LegalSection[] = [
       `The ${campaign.name} offers a flat ${campaign.discountPercent}% discount on the standard fee of every course listed on this website.`,
       {
         list: [
-          'The offer is valid until 11:59 PM Pakistan Standard Time on 14 August',
+          'The offer is a standing promotional rate and applies at the time of enrolment',
           'The discount applies to the total fee before it is divided into instalments',
-          'Enrolments confirmed before the deadline retain the discounted rate even if the batch begins later, provided the batch starts within three months',
           'The discount cannot be combined with any other promotional offer or scholarship unless we confirm otherwise in writing',
           'The discount is not transferable and has no cash value',
           'We reserve the right to withdraw or amend the offer at any time; enrolments already confirmed are unaffected',

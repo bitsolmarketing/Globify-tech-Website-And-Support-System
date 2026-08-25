@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     ...lead,
     courseTitle,
     source: 'website-contact-form',
-    campaign: 'azadi-sale-14-august',
+    campaign: 'course-discount',
     receivedAt: new Date().toISOString(),
     notify: process.env.CONTACT_FORM_TO_EMAIL || contactInfo.admissionsEmail,
   }
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
         courseTitle,
         message: lead.message,
         source: 'website-contact-form',
-        campaign: 'azadi-sale-14-august',
+        campaign: 'course-discount',
       })
     } catch (error) {
       console.error('[contact] could not store lead', error)

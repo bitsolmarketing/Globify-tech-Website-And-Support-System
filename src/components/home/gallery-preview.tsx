@@ -29,8 +29,8 @@ export async function GalleryPreview() {
         <Reveal>
           <SectionHeading
             id="gallery-heading"
-            eyebrow="Inside Globify"
-            title="Where the work actually happens"
+            eyebrow="Campus"
+            title="Experience Learning Differently"
             description="Our campus on Jaranwala Road: labs, critique sessions, ceremonies and the people behind the results."
           />
         </Reveal>

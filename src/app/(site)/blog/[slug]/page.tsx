@@ -28,7 +28,6 @@ import {
   imageObjectSchema,
   personSchema,
 } from '@/lib/schema'
-import { formatDayMonthLong } from '@/lib/utils'
 import { absoluteUrl, formatDate } from '@/lib/utils'
 
 type Params = { slug: string }
@@ -224,9 +223,8 @@ export default async function BlogPostPage({ params }: { params: Promise<Params>
                 Ready to turn this into a skill?
               </h2>
               <p className="mt-3 max-w-xl text-lg text-white/70">
-                Every course at Globify Tech Institute is {campaign.discountPercent}% off until{' '}
-                {formatDayMonthLong(campaign.deadline)}. Certification, internship and job
-                assistance included.
+                Every course at Globify Tech Institute is {campaign.discountPercent}% off for a
+                limited time. Certification, internship and job assistance included.
               </p>
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <Button asChild variant="gold" size="lg">

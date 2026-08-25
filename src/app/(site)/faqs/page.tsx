@@ -18,11 +18,11 @@ import { getFaqCategories, getFaqs } from '@/lib/data/content'
 import { buildMetadata } from '@/lib/metadata'
 import { breadcrumbSchema, faqSchema, graph, webPageSchema } from '@/lib/schema'
 import { contactInfo } from '@/lib/site'
-import { formatDayMonthLong, slugify } from '@/lib/utils'
+import { slugify } from '@/lib/utils'
 
 const TITLE = 'Frequently Asked Questions'
 const DESCRIPTION =
-  'Admissions, fees, batch timings, certification, refunds, job assistance and the 14 August Azadi 50% discount — answered in full by Globify Tech Institute Faisalabad.'
+  'Admissions, fees, batch timings, certification, refunds, job assistance and the current 50% discount — answered in full by Globify Tech Institute Faisalabad.'
 
 export const metadata: Metadata = buildMetadata({
   title: TITLE,
@@ -118,7 +118,7 @@ export default async function FaqsPage() {
                 <Button asChild variant="whatsapp" size="md">
                   <a
                     href={`https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(
-                      `Assalam o Alaikum! I have a question about the ${campaign.discountPercent}% OFF Azadi offer.`,
+                      `Assalam o Alaikum! I have a question about the ${campaign.discountPercent}% OFF offer.`,
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -152,11 +152,10 @@ export default async function FaqsPage() {
 
             <Card className="border-gold-200 bg-gold-50/60 p-7">
               <h2 className="font-sans text-lg font-bold text-gold-900">
-                {campaign.emoji} {campaign.name} ends {formatDayMonthLong(campaign.deadline)}
+                {campaign.emoji} {campaign.name}
               </h2>
               <p className="mt-2 text-[0.9375rem] leading-relaxed text-ink-600">
-                Confirm your enrolment before the deadline to lock {campaign.discountPercent}% off —
-                even if your batch starts later.
+                Enroll now to lock in {campaign.discountPercent}% off on any course.
               </p>
               <Button asChild variant="gold" size="md" className="mt-5 w-full">
                 <Link href="/courses">See all courses</Link>

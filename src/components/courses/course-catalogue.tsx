@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useSearchParams } from 'next/navigation'
 import { SearchX, SlidersHorizontal } from 'lucide-react'
 
 import { CourseCard } from '@/components/courses/course-card'
@@ -34,8 +35,17 @@ export function CourseCatalogue({
   courses: Course[]
   discountPercent: number
 }) {
+  const searchParams = useSearchParams()
+  /** Seeds the filter from `?category=` so links (e.g. the homepage Career
+   * Path cards) can deep-link into a pre-filtered view. Read once on mount —
+   * the pills below remain the source of truth after that. */
+  const initialCategory = searchParams.get('category')
   const [query, setQuery] = React.useState('')
-  const [category, setCategory] = React.useState<Filter>('All')
+  const [category, setCategory] = React.useState<Filter>(
+    courseCategories.includes(initialCategory as CourseCategory)
+      ? (initialCategory as Filter)
+      : 'All',
+  )
   const [sort, setSort] = React.useState<Sort>('popular')
   const searchId = React.useId()
 

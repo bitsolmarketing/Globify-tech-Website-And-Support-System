@@ -23,7 +23,7 @@ const UNITS: { key: keyof TimeLeft; label: string }[] = [
 ]
 
 /**
- * Azadi Sale countdown.
+ * Course discount countdown.
  *
  * The server renders real values and passes them in as `initial`, so the first
  * client render matches the HTML exactly — no hydration warning, no layout
@@ -54,7 +54,7 @@ export function CountdownTimer({ deadline, initial, tone = 'light', className, c
       aria-live="off"
       aria-label={
         expired
-          ? 'The Azadi Sale has ended'
+          ? 'The offer has ended'
           : `Offer ends in ${timeLeft.days} days, ${timeLeft.hours} hours and ${timeLeft.minutes} minutes`
       }
     >

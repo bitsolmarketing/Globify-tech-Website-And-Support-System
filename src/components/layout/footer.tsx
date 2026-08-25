@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { Campaign } from '@/lib/data/campaign'
 import { contactInfo, contactLines, footerNav, siteConfig } from '@/lib/site'
-import { formatDayMonthLong } from '@/lib/utils'
 
 const columns = [
   { heading: 'Institute', links: footerNav.company },
@@ -43,8 +42,8 @@ export function Footer({ campaign }: { campaign: Campaign }) {
                 </Badge>
                 <h2 className="mt-4 text-3xl text-white sm:text-4xl">
                   Ready to start? Get{' '}
-                  <span className="text-gradient-gold">{campaign.discountPercent}% OFF</span> before{' '}
-                  {formatDayMonthLong(campaign.deadline)}.
+                  <span className="text-gradient-gold">{campaign.discountPercent}% OFF</span> for a
+                  limited time.
                 </h2>
                 <p className="mt-3 max-w-xl text-lg text-white/70">
                   Talk to a career counsellor for free. We will match you to the right course

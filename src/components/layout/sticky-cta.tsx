@@ -8,7 +8,7 @@ import { ArrowRight, Phone, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Campaign } from '@/lib/data/campaign'
 import { contactInfo } from '@/lib/site'
-import { cn, formatDayMonth } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 /**
  * Mobile-only conversion bar. Appears after the hero so it never covers the
@@ -49,7 +49,7 @@ export function StickyCta({ campaign }: { campaign: Campaign }) {
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 font-sans text-[0.6875rem] font-bold tracking-wide text-gold-400 uppercase">
             <Tag aria-hidden className="size-3" />
-            {campaign.discountPercent}% OFF · ends {formatDayMonth(campaign.deadline)}
+            {campaign.discountPercent}% OFF · limited time
           </p>
           <p className="truncate font-sans text-[0.8125rem] font-semibold text-white">
             Seats are limited — enroll today

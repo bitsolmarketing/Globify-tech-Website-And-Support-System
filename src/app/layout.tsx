@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Montserrat } from 'next/font/google'
+import { Manrope } from 'next/font/google'
 
 import './globals.css'
 
@@ -15,16 +15,17 @@ import { absoluteUrl } from '@/lib/utils'
  * marketing header wrapped around it. Route groups do not affect URLs, so
  * every public path is unchanged.
  *
- * Headings: Montserrat, self-hosted by next/font (no render-blocking request
- * to fonts.googleapis.com, no layout shift thanks to the size-adjusted
- * fallback). Body copy uses the locally installed Times New Roman stack, so
- * body text costs zero bytes and paints on the first frame.
+ * One family — Manrope — for both headings and body, self-hosted by
+ * next/font (no render-blocking request to fonts.googleapis.com, no layout
+ * shift thanks to the size-adjusted fallback). A single premium sans reads
+ * more cohesive than pairing two families, and weight alone carries the
+ * hierarchy.
  */
-const montserrat = Montserrat({
+const manrope = Manrope({
   subsets: ['latin'],
   display: 'swap',
-  weight: ['400', '500', '600', '700', '800', '900'],
-  variable: '--font-montserrat',
+  weight: ['400', '500', '600', '700', '800'],
+  variable: '--font-manrope',
   fallback: ['Segoe UI', 'system-ui', 'sans-serif'],
   adjustFontFallback: true,
 })
@@ -32,7 +33,7 @@ const montserrat = Montserrat({
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
-    default: `${siteConfig.name} — 50% OFF Azadi Sale | IT Courses in Faisalabad`,
+    default: `${siteConfig.name} — ${siteConfig.tagline}`,
     template: `%s | ${siteConfig.name}`,
   },
   description: siteConfig.description,
@@ -65,7 +66,7 @@ export const metadata: Metadata = {
     locale: siteConfig.locale,
     url: siteConfig.url,
     siteName: siteConfig.name,
-    title: `${siteConfig.name} — 50% OFF Azadi Sale`,
+    title: `${siteConfig.name} — ${siteConfig.tagline}`,
     description: siteConfig.description,
     images: [
       {
@@ -80,13 +81,13 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@globifytech',
     creator: '@globifytech',
-    title: `${siteConfig.name} — 50% OFF Azadi Sale`,
+    title: `${siteConfig.name} — ${siteConfig.tagline}`,
     description: siteConfig.description,
     images: ['/api/og'],
   },
   // Icons are intentionally NOT declared here. Next generates the correct
-  // hashed <link> tags from the file conventions `app/icon.svg` and
-  // `app/apple-icon.tsx`; hardcoding paths here overrides them with URLs that
+  // hashed <link> tags from the file conventions `app/icon.png` and
+  // `app/apple-icon.png`; hardcoding paths here overrides them with URLs that
   // do not exist. `public/favicon.ico` covers the browser's implicit request.
   manifest: '/manifest.webmanifest',
   verification: {
@@ -101,15 +102,15 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: 'cover',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#01411C' },
-    { media: '(prefers-color-scheme: dark)', color: '#01411C' },
+    { media: '(prefers-color-scheme: light)', color: '#4338CA' },
+    { media: '(prefers-color-scheme: dark)', color: '#4338CA' },
   ],
   colorScheme: 'light',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-PK" className={montserrat.variable} suppressHydrationWarning>
+    <html lang="en-PK" className={manrope.variable} suppressHydrationWarning>
       <body className="min-h-dvh antialiased">
         {children}
         <Toaster />

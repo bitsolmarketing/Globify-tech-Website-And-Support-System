@@ -24,7 +24,7 @@ export async function ContactSection() {
             id="contact-heading"
             eyebrow="Get in touch"
             title="Book your free career counselling session"
-            description="Tell us where you are now and where you want to be. We will recommend the right course honestly — and confirm your 50% Azadi discount."
+            description="Tell us where you are now and where you want to be. We will recommend the right course honestly — and confirm your 50% discount."
           />
         </Reveal>
 

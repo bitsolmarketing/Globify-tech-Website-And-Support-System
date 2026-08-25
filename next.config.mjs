@@ -161,6 +161,24 @@ const nextConfig = {
       { source: '/courses/index', destination: '/courses', permanent: true },
       { source: '/blogs', destination: '/blog', permanent: true },
       { source: '/blogs/:slug', destination: '/blog/:slug', permanent: true },
+
+      /* Azadi-campaign posts renamed to evergreen slugs when the sale theme
+         was retired — keep the old URLs alive for inbound links. */
+      {
+        source: '/blog/14-august-azadi-sale-50-percent-off-professional-courses',
+        destination: '/blog/50-percent-off-professional-courses-guide',
+        permanent: true,
+      },
+      {
+        source: '/blog/limited-time-50-percent-off-azadi-offer',
+        destination: '/blog/course-fees-50-percent-discount',
+        permanent: true,
+      },
+      {
+        source: '/blog/celebrate-independence-by-investing-in-yourself',
+        destination: '/blog/the-case-for-investing-in-yourself',
+        permanent: true,
+      },
       { source: '/contact-us', destination: '/contact', permanent: true },
       { source: '/about-us', destination: '/about', permanent: true },
       { source: '/privacy', destination: '/privacy-policy', permanent: true },

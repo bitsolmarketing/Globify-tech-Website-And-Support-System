@@ -2,7 +2,7 @@
   "name": "globify-tech-institute",
   "version": "1.0.0",
   "private": true,
-  "description": "Globify Tech Institute — 14 August Azadi Sale campaign website. Next.js 15 App Router.",
+  "description": "Globify Tech Institute — marketing website. Next.js 15 App Router.",
   "engines": {
     "node": ">=20.9.0"
   },

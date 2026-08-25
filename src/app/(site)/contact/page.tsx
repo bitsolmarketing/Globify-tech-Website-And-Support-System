@@ -24,11 +24,10 @@ import {
   webPageSchema,
 } from '@/lib/schema'
 import { contactInfo, siteConfig } from '@/lib/site'
-import { formatDayMonthLong } from '@/lib/utils'
 
 const TITLE = 'Contact & Free Career Counseling'
 const DESCRIPTION =
-  'Call, WhatsApp, email or visit Globify Tech Institute on Jaranwala Road, Faisalabad. Book a free 20-minute career counselling session and claim 50% OFF before 14 August.'
+  'Call, WhatsApp, email or visit Globify Tech Institute on Jaranwala Road, Faisalabad. Book a free 20-minute career counselling session and claim 50% OFF.'
 
 export const metadata: Metadata = buildMetadata({
   title: TITLE,
@@ -109,7 +108,7 @@ export default async function ContactPage() {
   )
 
   const WHATSAPP_HREF = `https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(
-    `Assalam o Alaikum! I want to book a free career counselling session and know more about the ${campaign.discountPercent}% OFF ${campaign.name}.`,
+    `Assalam o Alaikum! I want to book a free career counselling session and know more about the ${campaign.discountPercent}% OFF offer.`,
   )}`
 
   const CHANNELS = buildChannels(WHATSAPP_HREF)
@@ -123,12 +122,12 @@ export default async function ContactPage() {
             Book your free <span className="text-gradient-gold">career counseling</span>
           </>
         }
-        description={`Tell us where you are now and where you want to be. We will recommend the right course honestly — and confirm your ${campaign.discountPercent}% Azadi discount.`}
+        description={`Tell us where you are now and where you want to be. We will recommend the right course honestly — and confirm your ${campaign.discountPercent}% discount.`}
         crumbs={CRUMBS}
         aside={
           <Card className="border-white/12 bg-white/8 p-7 text-white backdrop-blur-xl">
             <Badge variant="solid-gold" size="md">
-              {campaign.emoji} Offer ends {formatDayMonthLong(campaign.deadline)}
+              {campaign.emoji} Limited-Time Offer
             </Badge>
 
             <ul className="mt-6 grid gap-4">
@@ -216,7 +215,7 @@ export default async function ContactPage() {
             </h2>
             <p className="mt-3 text-lg text-ink-500">
               Fill this in and our admissions team will call you within one working day to confirm
-              your batch, timing and the {campaign.discountPercent}% Azadi discount.
+              your batch, timing and the {campaign.discountPercent}% discount.
             </p>
 
             <Card className="mt-8 p-7 sm:p-9">

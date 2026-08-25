@@ -1,6 +1,6 @@
-# Globify Tech Institute — 14 August Azadi Campaign Website
+# Globify Tech Institute — Website
 
-A production-ready marketing and content site for **Globify Tech Institute, Faisalabad**, built around the **14 August Azadi Sale (50% OFF all courses)** campaign.
+A production-ready marketing and content site for **Globify Tech Institute, Faisalabad**, with an evergreen 50% OFF course discount as a standing promotion.
 
 Built with **Next.js 15 (App Router)**, **React 19**, **TypeScript (strict)**, **Tailwind CSS v4**, **Framer Motion** and **Radix UI** primitives in the shadcn/ui style. Content is stored in **Supabase Postgres** via **Drizzle ORM** and edited through an authenticated admin at `/admin` (**Auth.js**), while the public site stays fully pre-rendered.
 

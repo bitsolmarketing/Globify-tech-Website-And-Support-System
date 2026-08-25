@@ -142,17 +142,6 @@ const HANDOFF: Localised = {
 export const handoffNotice = (language: BotLanguage) =>
   pick(HANDOFF, language).replace('{phone}', contactInfo.phone)
 
-const BUSY: Localised = {
-  en: "Sorry, I'm having trouble replying right now. Please try again in a moment, or call us on {phone}.",
-  ur: 'معذرت، ابھی جواب دینے میں دشواری ہو رہی ہے۔ تھوڑی دیر بعد کوشش کریں، یا {phone} پر کال کریں۔',
-  ur_roman:
-    'Maazrat, abhi reply karne mein dikkat ho rahi hai. Thori der baad koshish karein, ya {phone} par call karein.',
-  pa: 'معافی، ہُݨے جواب دیݨ وچ اوکھ آ رہی اے۔ تھوڑی دیر بعد کوشش کرو، یا {phone} تے کال کرو۔',
-}
-
-export const busyNotice = (language: BotLanguage) =>
-  pick(BUSY, language).replace('{phone}', contactInfo.phone)
-
 const MEDIA: Localised = {
   en: "📎 Thanks — I've received that. I can't open files, so please also describe what you need in a message.",
   ur: '📎 شکریہ — مجھے موصول ہو گیا۔ میں فائل نہیں کھول سکتا، براہِ کرم پیغام میں بھی بتا دیں۔',

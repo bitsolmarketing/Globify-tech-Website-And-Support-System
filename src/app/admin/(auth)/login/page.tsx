@@ -27,10 +27,14 @@ function missingConfig(): string[] {
 }
 
 export default async function AdminLoginPage() {
-  const session = await auth()
-  if (session?.user) redirect('/admin')
-
   const missing = missingConfig()
+
+  /* `auth()` needs AUTH_SECRET to verify the session cookie and throws when it
+     is absent — which, unhandled, is exactly what turned a missing env var
+     into a blank crash screen instead of the "not configured yet" message
+     below. Skip the call entirely when the secret isn't there to check. */
+  const session = missing.includes('AUTH_SECRET') ? null : await auth()
+  if (session?.user) redirect('/admin')
 
   async function login(_prev: LoginState, formData: FormData): Promise<LoginState> {
     'use server'

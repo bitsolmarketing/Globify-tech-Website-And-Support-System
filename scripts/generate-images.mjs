@@ -273,6 +273,11 @@ const COURSE_SLUGS = [
   'video-editing',
 ]
 
+/* Filenames match the `image:` frontmatter in content/blog/*.mdx, which was
+   kept stable across the 2026 Azadi-theme retirement (posts were renamed to
+   evergreen slugs, but their existing generated images were reused rather
+   than regenerated) — so these still reflect the original slugs, not the
+   current post filenames. */
 const BLOG_SLUGS = [
   '14-august-azadi-sale-50-percent-off-professional-courses',
   'why-learning-ai-in-pakistan-is-essential-in-2026',
@@ -368,9 +373,23 @@ async function main() {
 
   if (await writeFavicon()) written += 1
 
-  // Brand logo (also used by Organization JSON-LD)
-  if (await render(logoArt(512), path.join(OUT, 'brand', 'logo.webp'), { width: 512, height: 512, quality: 92 })) {
-    written += 1
+  // Brand logo (also used by Organization JSON-LD). The real mark lives at
+  // public/images/brand/logo-mark.png (tracked in git, unlike this gitignored
+  // `generated/` tree) — derive the webp from it so a fresh clone/CI build
+  // doesn't regress to the placeholder crescent art.
+  const logoTarget = path.join(OUT, 'brand', 'logo.webp')
+  const realLogoMark = path.join(ROOT, 'public', 'images', 'brand', 'logo-mark.png')
+  if (process.env.FORCE_ASSETS === '1' || !(await exists(logoTarget))) {
+    if (await exists(realLogoMark)) {
+      const buffer = await sharp(realLogoMark)
+        .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .webp({ quality: 92 })
+        .toBuffer()
+      await writeFile(logoTarget, buffer)
+      written += 1
+    } else if (await render(logoArt(512), logoTarget, { width: 512, height: 512, quality: 92 })) {
+      written += 1
+    }
   }
 
   // Courses

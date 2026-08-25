@@ -24,10 +24,10 @@ export async function FeaturedCourses() {
             eyebrow="Most in-demand"
             title={
               <>
-                Courses that turn into <span className="text-gradient-brand">income</span>
+                Learn skills that actually <span className="text-gradient-brand">pay</span>
               </>
             }
-            description={`Every programme is project-based, taught by working professionals, and now ${courseStats.total} courses deep. All of them are 50% off until 14 August.`}
+            description={`Practical programmes designed to take you from beginner to industry-ready — ${courseStats.total} courses deep, project-based, taught by working professionals.`}
           />
         </Reveal>
 

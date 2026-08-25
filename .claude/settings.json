@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git mv *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(npx tsx *)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\({path:'.env.local'}\\); console.log\\(process.env.DATABASE_URL ? 'set' : 'unset'\\)\")",
+      "Bash(rm scripts/sync-rebrand-to-db.ts)",
+      "Bash(rm -rf .next)",
+      "Bash(tasklist //FI \"IMAGENAME eq node.exe\")",
+      "Bash(NEXT_DIST_DIR=.next-verify npm run build)",
+      "Bash(git checkout *)",
+      "Bash(git check-ignore *)",
+      "Bash(timeout 45 bash -c 'until curl -sf http://localhost:3000 >/dev/null; do sleep 1; done')",
+      "Bash(command -v chromium-cli)",
+      "Bash(node -e \"console.log\\(require.resolve\\('playwright'\\)\\)\")",
+      "Bash(curl -sf http://localhost:3000)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue })"
+    ]
+  }
+}

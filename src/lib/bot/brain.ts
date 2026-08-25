@@ -250,76 +250,118 @@ export async function generateAnswer(
   turns: Turn[],
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim()
-  if (!apiKey) {
+  const key: string = process.env.GEMINI_API_KEY?.trim() ?? ''
+  if (!key) {
     console.error('[bot] GEMINI_API_KEY is not set — cannot answer.')
     return null
   }
 
   const model = process.env.AI_MODEL?.trim() || 'gemini-3-flash-preview'
-  const maxTokens = Number(process.env.AI_MAX_TOKENS ?? 1400) || 1400
+  const baseMaxTokens = Number(process.env.AI_MAX_TOKENS ?? 1400) || 1400
   const supportsThinkingLevel = /^gemini-3/i.test(model)
 
-  const body = {
-    systemInstruction: { parts: [{ text: system }] },
-    generationConfig: {
-      maxOutputTokens: maxTokens,
-      ...(supportsThinkingLevel ? { thinkingConfig: { thinkingLevel: 'minimal' } } : {}),
-    },
-    contents: turns.slice(-20).map((turn) => ({
-      role: turn.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: turn.content }],
-    })),
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
+
+  function buildBody(maxOutputTokens: number) {
+    return {
+      systemInstruction: { parts: [{ text: system }] },
+      generationConfig: {
+        maxOutputTokens,
+        ...(supportsThinkingLevel ? { thinkingConfig: { thinkingLevel: 'minimal' } } : {}),
+      },
+      contents: turns.slice(-20).map((turn) => ({
+        role: turn.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: turn.content }],
+      })),
+    }
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
+  /**
+   * One call. Returns the finish reason alongside the text because an empty
+   * string on its own is ambiguous — `MAX_TOKENS` means the answer is worth
+   * retrying with more room, `SAFETY`/`RECITATION` means it is not.
+   */
+  async function call(
+    maxOutputTokens: number,
+  ): Promise<{ text: string; finishReason?: string } | null> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // A header, not a `key=` query parameter: a URL-embedded key leaks
+        // into access logs, proxy logs and any thrown error string.
+        'x-goog-api-key': key,
+      },
+      body: JSON.stringify(buildBody(maxOutputTokens)),
+      signal: signal ?? AbortSignal.timeout(25_000),
+      cache: 'no-store',
+    })
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      const retryable = response.status >= 500 || response.status === 429
+      console.warn(`[bot] Gemini refused with ${response.status}${retryable ? ', retrying' : ''}: ${detail.slice(0, 300)}`)
+      if (!retryable) return { text: '', finishReason: `HTTP_${response.status}` }
+      throw new Error(`retryable HTTP ${response.status}`)
+    }
+
+    const json = (await response.json()) as {
+      candidates?: {
+        content?: { parts?: { text?: string; thought?: boolean }[] }
+        finishReason?: string
+      }[]
+    }
+
+    const candidate = json.candidates?.[0]
+
+    // Gemini may split one answer across several parts; taking parts[0]
+    // silently truncates. Parts flagged `thought` are reasoning, not answer.
+    const text = (candidate?.content?.parts ?? [])
+      .filter((part) => !part.thought)
+      .map((part) => part.text ?? '')
+      .join('')
+      .trim()
+
+    return { text, finishReason: candidate?.finishReason }
+  }
+
+  let lastFinishReason: string | undefined
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, 300 * 3 ** (attempt - 2)))
 
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // A header, not a `key=` query parameter: a URL-embedded key leaks
-          // into access logs, proxy logs and any thrown error string.
-          'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify(body),
-        signal: signal ?? AbortSignal.timeout(25_000),
-        cache: 'no-store',
-      })
-
-      if (!response.ok) {
-        const detail = await response.text().catch(() => '')
-        // 4xx will not fix itself on a retry; 5xx and 429 might.
-        if (response.status < 500 && response.status !== 429) {
-          console.error(`[bot] Gemini refused with ${response.status}: ${detail.slice(0, 300)}`)
-          return null
-        }
-        console.warn(`[bot] Gemini ${response.status}, retrying (${attempt}/3).`)
-        continue
+      const result = await call(baseMaxTokens)
+      if (!result) continue
+      if (result.text) return result.text
+      lastFinishReason = result.finishReason
+      if (result.finishReason && result.finishReason.startsWith('HTTP_')) return null
+      // A blocked candidate will not un-block itself on a retry; only an empty
+      // MAX_TOKENS answer (thinking ate the budget) is worth trying again for.
+      if (result.finishReason && result.finishReason !== 'MAX_TOKENS') {
+        console.warn(`[bot] Gemini returned no usable text (${result.finishReason}).`)
+        break
       }
-
-      const json = (await response.json()) as {
-        candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[]
-      }
-
-      // Gemini may split one answer across several parts; taking parts[0]
-      // silently truncates. Parts flagged `thought` are reasoning, not answer.
-      const text = (json.candidates?.[0]?.content?.parts ?? [])
-        .filter((part) => !part.thought)
-        .map((part) => part.text ?? '')
-        .join('')
-        .trim()
-
-      return text || null
     } catch (error) {
       if (signal?.aborted) return null
       console.warn(`[bot] Gemini call failed (${attempt}/3):`, (error as Error)?.message)
     }
   }
 
+  /* Last resort: the model answered with nothing every time, most often because
+     `thinkingLevel: minimal` still spent the whole budget reasoning before it
+     could write a word. One more attempt with a much larger ceiling costs a
+     couple of seconds and is far cheaper than the alternative — the visitor
+     seeing the bot fail and the lead going cold. */
+  try {
+    const result = await call(Math.max(baseMaxTokens * 3, 3000))
+    if (result?.text) return result.text
+    if (result?.finishReason) lastFinishReason = result.finishReason
+  } catch (error) {
+    if (signal?.aborted) return null
+    console.warn('[bot] Gemini final attempt failed:', (error as Error)?.message)
+  }
+
+  console.error(`[bot] Gemini produced no answer (last finish reason: ${lastFinishReason ?? 'unknown'}).`)
   return null
 }
