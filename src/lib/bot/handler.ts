@@ -152,7 +152,7 @@ async function route(message: InboundMessage): Promise<void> {
   const answer = (message.replyId ?? message.text ?? '').trim()
   const lowered = answer.toLowerCase()
 
-  if (message.kind === 'media' && !message.text) return say(context, mediaAck(context.language))
+  if (message.kind === 'media' && !message.text) return sayMenu(context, mediaAck(context.language))
   if (message.kind === 'unsupported' || !answer) return say(context, helpMenu(context.language))
 
   /* Everyone who writes becomes a lead, before anything else is decided. The
