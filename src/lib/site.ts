@@ -10,8 +10,22 @@ export const siteConfig = {
   shortName: 'Globify Tech',
   legalName: 'Globify Tech Institute (Pvt) Ltd',
   tagline: 'Learn Today. Lead Tomorrow.',
+  /**
+   * Long form. Used where length is an asset rather than a liability — JSON-LD
+   * `description` fields and the web app manifest, none of which are truncated.
+   * Never use this as a `<meta name="description">`: at 242 characters Google
+   * cuts it off mid-sentence. That is what `metaDescription` is for.
+   */
   description:
     'Globify Tech Institute Faisalabad offers practical, job-focused training in AI, Digital Marketing, Web Development, Graphic Designing, Video Editing, Python, Freelancing, Amazon and Shopify — with certification, internship and job assistance.',
+  /**
+   * Search-result copy, held under ~155 characters so it survives intact in a
+   * SERP snippet and in Open Graph/Twitter cards. Leads with the outcome
+   * ("job-focused"), names the city for local intent, closes with a call to
+   * action — the three things a snippet has room to do.
+   */
+  metaDescription:
+    'Job-focused training in AI, digital marketing, web development, design and video editing in Faisalabad — with certification, internship and job help.',
   url: (process.env.NEXT_PUBLIC_SITE_URL || 'https://globifytech.com').replace(/\/$/, ''),
   locale: 'en_PK',
   language: 'en',
@@ -201,25 +215,12 @@ export const mainNav: NavItem[] = [
     megaMenu: {
       columns: [
         {
-          heading: 'AI & Development',
-          links: [
-            { label: 'Full Stack Development with AI', href: '/courses/full-stack-development-with-ai', description: 'React, Next.js, Node & AI pair programming' },
-          ],
-        },
-        {
           heading: 'Marketing & Business',
           links: [
             { label: 'Digital Media Marketing with AI', href: '/courses/digital-media-marketing-with-ai', description: 'SEO, Meta Ads, Google Ads & funnels' },
             { label: 'Social Media Marketing with AI', href: '/courses/social-media-marketing-with-ai', description: 'Organic growth, paid social & short-form' },
-            { label: 'TikTok Shop', href: '/courses/tiktok-shop', description: 'Affiliate, live selling & creator ops' },
             { label: 'Facebook Automation & Monetization', href: '/courses/facebook-automation-and-monetization', description: 'Page growth, chatbots & payouts' },
-          ],
-        },
-        {
-          heading: 'Design & Media',
-          links: [
-            { label: 'Graphic Designing', href: '/courses/graphic-designing', description: 'Photoshop, Illustrator & branding' },
-            { label: 'Video Editing: Beginner to Pro', href: '/courses/video-editing', description: 'Premiere Pro, After Effects & reels' },
+            { label: 'Content Creation Course', href: '/courses/content-creation', description: 'Scripting, filming, editing & getting paid' },
             { label: 'View all courses', href: '/courses' },
           ],
         },
@@ -251,11 +252,9 @@ export const footerNav = {
   ],
   courses: [
     { label: 'Digital Media Marketing with AI', href: '/courses/digital-media-marketing-with-ai' },
-    { label: 'Full Stack Development with AI', href: '/courses/full-stack-development-with-ai' },
     { label: 'Social Media Marketing with AI', href: '/courses/social-media-marketing-with-ai' },
-    { label: 'Graphic Designing', href: '/courses/graphic-designing' },
-    { label: 'Video Editing', href: '/courses/video-editing' },
-    { label: 'TikTok Shop', href: '/courses/tiktok-shop' },
+    { label: 'Facebook Automation & Monetization', href: '/courses/facebook-automation-and-monetization' },
+    { label: 'Content Creation Course', href: '/courses/content-creation' },
     { label: 'All Courses', href: '/courses' },
   ],
   resources: [

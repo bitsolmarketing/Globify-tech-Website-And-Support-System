@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     default: `${siteConfig.name} — ${siteConfig.tagline}`,
     template: `%s | ${siteConfig.name}`,
   },
-  description: siteConfig.description,
+  description: siteConfig.metaDescription,
   keywords: [...siteConfig.keywords],
   applicationName: siteConfig.name,
   authors: [{ name: siteConfig.name, url: siteConfig.url }],
@@ -67,7 +67,7 @@ export const metadata: Metadata = {
     url: siteConfig.url,
     siteName: siteConfig.name,
     title: `${siteConfig.name} — ${siteConfig.tagline}`,
-    description: siteConfig.description,
+    description: siteConfig.metaDescription,
     images: [
       {
         url: '/api/og',
@@ -82,7 +82,7 @@ export const metadata: Metadata = {
     site: '@globifytech',
     creator: '@globifytech',
     title: `${siteConfig.name} — ${siteConfig.tagline}`,
-    description: siteConfig.description,
+    description: siteConfig.metaDescription,
     images: ['/api/og'],
   },
   // Icons are intentionally NOT declared here. Next generates the correct

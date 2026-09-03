@@ -115,6 +115,33 @@ export const authors: Author[] = [
       email: 'bilal@globifytech.com',
     },
   },
+  {
+    slug: 'muhammad-adnan-bashir',
+    name: 'Muhammad Adnan Bashir',
+    role: 'Content Creation Instructor',
+    /* ---------------------------------------------------------------------
+     * INCOMPLETE — four fields below describe a real person and were left for
+     * him to write rather than invented here.
+     *
+     *   credentials · bio · longBio · yearsExperience
+     *
+     * `yearsExperience` renders verbatim on the course page as "0 years
+     * industry experience" and in the author page's OG image, so it is wrong
+     * on screen until it is set. That is deliberate: a visibly empty figure
+     * gets fixed, a plausible invented one never does.
+     * ------------------------------------------------------------------- */
+    credentials: '',
+    bio: 'Teaches the Content Creation programme at Globify Tech Institute.',
+    longBio: [
+      'Teaches the Content Creation programme at Globify Tech Institute, covering strategy, scripting, shooting, editing and the business of getting paid for content.',
+    ],
+    avatar: '/images/generated/authors/muhammad-adnan-bashir.webp',
+    expertise: ['Content Creation', 'Short-Form Video', 'Scriptwriting', 'Personal Branding'],
+    yearsExperience: 0,
+    social: {
+      email: 'adnan@globifytech.com',
+    },
+  },
 ]
 
 export function getAuthorBySlug(slug: string): Author | undefined {

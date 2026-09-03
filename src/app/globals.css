@@ -230,6 +230,145 @@
 }
 
 /* ==========================================================================
+   SCROLL REVEAL
+
+   Drives <Reveal>, <RevealGroup> and <Floating> in
+   `components/shared/reveal.tsx`. Those were framer-motion client components
+   until now: one mounted component and one IntersectionObserver per revealed
+   element, 42 of them on the home page, all animating through the main thread.
+   That was the bulk of a 450 ms Total Blocking Time and the source of the
+   "non-composited animation" warnings.
+
+   Everything below runs on the compositor via `animation-timeline: view()`,
+   and none of it ships a byte of JavaScript.
+
+   The single most important property here: THIS CANNOT HIDE CONTENT. The
+   hidden keyframe exists only inside `@supports (animation-timeline: view())`
+   and only outside `prefers-reduced-motion`. A browser that does not support
+   scroll-driven animations renders every element in its final, visible state.
+   The previous implementation could — and did — leave the page blank when its
+   JavaScript chunk failed to load. There is no longer any script to fail.
+
+   Only `opacity` and `transform` are animated, so no reveal can cause layout,
+   paint, or a forced reflow.
+   ========================================================================== */
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--reveal-d, 28px), 0) scale(var(--reveal-s, 1));
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes reveal-down {
+  from {
+    opacity: 0;
+    transform: translate3d(0, calc(var(--reveal-d, 28px) * -1), 0) scale(var(--reveal-s, 1));
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes reveal-left {
+  from {
+    opacity: 0;
+    transform: translate3d(var(--reveal-d, 28px), 0, 0) scale(var(--reveal-s, 1));
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes reveal-right {
+  from {
+    opacity: 0;
+    transform: translate3d(calc(var(--reveal-d, 28px) * -1), 0, 0) scale(var(--reveal-s, 1));
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes reveal-none {
+  from {
+    opacity: 0;
+    transform: scale(var(--reveal-s, 1));
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, calc(var(--float-amplitude, 12px) * -1), 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    /* The reveal completes partway through the element's *entry* range rather
+       than at a `cover` percentage. An element near the bottom of the document
+       may never reach a late cover position — the page simply runs out of
+       scroll — and would then be stranded half-transparent. Entry ranges are
+       reachable for anything with the footer below it. */
+    [data-reveal],
+    [data-reveal-group] > * {
+      animation: reveal-up 1s linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry var(--reveal-end, 60%);
+    }
+
+    [data-reveal='down'] {
+      animation-name: reveal-down;
+    }
+    [data-reveal='left'] {
+      animation-name: reveal-left;
+    }
+    [data-reveal='right'] {
+      animation-name: reveal-right;
+    }
+    [data-reveal='none'] {
+      animation-name: reveal-none;
+    }
+
+    /* Positional stagger. Siblings in a grid row share their geometry, so they
+       would otherwise animate in perfect unison; finishing each one a little
+       further into its entry restores the cascade the old `staggerChildren`
+       gave us — without the parent needing to know its children. */
+    [data-reveal-group] > *:nth-child(2) {
+      --reveal-end: 68%;
+    }
+    [data-reveal-group] > *:nth-child(3) {
+      --reveal-end: 76%;
+    }
+    [data-reveal-group] > *:nth-child(4) {
+      --reveal-end: 84%;
+    }
+    [data-reveal-group] > *:nth-child(n + 5) {
+      --reveal-end: 90%;
+    }
+  }
+
+  [data-floating] {
+    animation: float-y var(--float-duration, 7s) ease-in-out var(--float-delay, 0s) infinite;
+  }
+}
+
+/* ==========================================================================
    BASE
    ========================================================================== */
 @layer base {

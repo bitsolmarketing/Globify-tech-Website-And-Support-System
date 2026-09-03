@@ -16,7 +16,17 @@
       "Bash(command -v chromium-cli)",
       "Bash(node -e \"console.log\\(require.resolve\\('playwright'\\)\\)\")",
       "Bash(curl -sf http://localhost:3000)",
-      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue })"
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue })",
+      "Bash(git stash *)",
+      "Bash(npm install *)",
+      "Read(//tmp/**)",
+      "Bash(node -e ' *)",
+      "Bash(curl -sS \"http://localhost:3123/_next/static/css/e4960ac06932a4b8.css\" -o ./site-check.css)",
+      "Bash(rm -f ./site-check.css)",
+      "Bash(curl -sS http://localhost:3123/)",
+      "Bash(curl -sS \"http://localhost:3123/_next/static/css/18f8e991afcd6542.css\" -o ./main.css)",
+      "Bash(rm -f ./main.css)",
+      "Bash(taskkill //PID 16348 //F)"
     ]
   }
 }

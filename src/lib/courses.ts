@@ -57,155 +57,29 @@ export const courseCategories: CourseCategory[] = [
   'Design & Media',
 ]
 
-export const courses: Course[] = [
-  /* ------------------------------------------------- AI & Development */
-  {
-    slug: 'full-stack-development-with-ai',
-    title: 'Full Stack Development with AI',
-    shortTitle: 'Full Stack with AI',
-    category: 'AI & Development',
-    tagline: 'Build and ship complete web applications, with AI as your pair programmer',
-    description:
-      'Full stack web development course in Faisalabad — HTML, CSS, JavaScript, React, Next.js, Node and databases, taught alongside AI coding tools. 3 months, project-based.',
-    overview: [
-      'This is the programme for someone who wants to build software for a living. Over twelve weeks you go from your first HTML page to a deployed, database-backed application that real users can sign into.',
-      'AI is woven through the course rather than bolted on. You will use Copilot and Claude the way working engineers actually use them — to scaffold faster, understand unfamiliar code and debug — while still learning the fundamentals well enough to know when the AI is wrong.',
-      'Nothing counts until it is deployed. You push to GitHub from week two and finish with a live URL, a repository an employer can read, and the ability to explain every decision in it.',
-    ],
-    image: '/images/generated/courses/full-stack-development-with-ai.webp',
-    icon: 'Code2',
-    duration: '3 Months',
-    durationWeeks: 12,
-    hoursPerWeek: 6,
-    level: 'Beginner to Advanced',
-    originalFee: 60000,
-    mode: ['On-Campus', 'Live Online', 'Hybrid'],
-    language: 'Urdu + English',
-    skills: [
-      'HTML & CSS',
-      'JavaScript (ES2023)',
-      'React',
-      'Next.js',
-      'Node.js & APIs',
-      'Databases & SQL',
-      'Git & GitHub',
-      'AI-Assisted Development',
-    ],
-    tools: ['VS Code', 'React', 'Next.js', 'Node.js', 'PostgreSQL', 'Git', 'GitHub Copilot', 'Vercel'],
-    outcomes: [
-      'Build responsive, accessible interfaces from a design file',
-      'Write and consume REST APIs backed by a real database',
-      'Use AI coding assistants effectively without losing the fundamentals',
-      'Deploy a full application to production and keep it running',
-      'Present a GitHub portfolio that stands up to a technical interview',
-    ],
-    curriculum: [
-      {
-        module: 'Web Foundations',
-        topics: [
-          'How the web actually works: requests, responses, rendering',
-          'Semantic HTML and why it decides your accessibility score',
-          'Modern CSS: flexbox, grid, custom properties',
-          'Responsive layout without frameworks',
-        ],
-      },
-      {
-        module: 'JavaScript in Depth',
-        topics: [
-          'Types, scope, closures and the things interviews ask about',
-          'Arrays, objects and immutable update patterns',
-          'Async: promises, async/await, error handling',
-          'Fetching data and handling every failure case',
-        ],
-      },
-      {
-        module: 'React',
-        topics: [
-          'Components, props and state',
-          'Hooks: useState, useEffect, useMemo and custom hooks',
-          'Lists, forms and controlled inputs',
-          'Thinking in components: breaking a design into a tree',
-        ],
-      },
-      {
-        module: 'Next.js & Full Stack',
-        topics: [
-          'App Router, server and client components',
-          'Data fetching, caching and revalidation',
-          'Server actions and form handling',
-          'Authentication and protected routes',
-        ],
-      },
-      {
-        module: 'Databases & APIs',
-        topics: [
-          'Relational modelling and normalisation basics',
-          'SQL you will actually write: joins, indexes, transactions',
-          'Building a REST API with Node',
-          'Validation, error handling and API security basics',
-        ],
-      },
-      {
-        module: 'AI-Assisted Engineering',
-        topics: [
-          'Copilot and Claude in a real workflow — where they help, where they hurt',
-          'Prompting for code review, refactors and test generation',
-          'Reading and verifying AI-generated code before you ship it',
-          'Debugging with an AI assistant instead of guessing',
-        ],
-      },
-      {
-        module: 'Ship It',
-        topics: [
-          'Git workflow, branches and pull requests',
-          'Deployment, environment variables and secrets',
-          'Performance and Lighthouse basics',
-          'Capstone: a deployed full-stack application',
-        ],
-      },
-    ],
-    careers: [
-      { role: 'Frontend Developer', salary: 'Rs 80k – 200k / month' },
-      { role: 'Full Stack Developer', salary: 'Rs 100k – 250k / month' },
-      { role: 'React / Next.js Freelancer', salary: '$15 – $50 / hour' },
-      { role: 'Junior Software Engineer', salary: 'Rs 70k – 150k / month' },
-    ],
-    projects: [
-      'Responsive multi-page business website',
-      'React dashboard consuming a live API',
-      'Full-stack app with authentication and a database',
-      'Deployed capstone with a public URL and README',
-    ],
-    instructorSlug: 'hassan-mehmood',
-    rating: 0,
-    reviews: 0,
-    enrolled: 0,
-    featured: true,
-    badge: 'Highest Demand',
-    faqs: [
-      {
-        question: 'Do I need any programming background to join?',
-        answer:
-          'No. The first three weeks assume you have never written a line of code. What you do need is time — expect six hours of class plus several hours of practice each week, because programming is learned by doing it repeatedly, not by watching someone else do it.',
-      },
-      {
-        question: 'Will using AI stop me from actually learning to code?',
-        answer:
-          'It would if we let you start there. You write the fundamentals by hand first, and AI tooling is introduced once you can already read and judge the code it produces. That order is deliberate — a developer who cannot tell good output from bad is not employable, however fast they type.',
-      },
-      {
-        question: 'Do I need my own laptop?',
-        answer:
-          'It helps enormously and we strongly recommend it, since most of your progress happens between classes. If that is not possible, the on-campus lab is available free to enrolled students throughout the course, including outside class hours.',
-      },
-    ],
-  },
+/**
+ * The categories that currently have a course in them.
+ *
+ * `courseCategories` above is the allowed SET — it is the admin dropdown, the
+ * zod enum and the column type, so it has to keep listing a category that
+ * happens to be empty today. The interface needs the other question answered:
+ * which filters and which cards are worth drawing. A filter chip that returns
+ * nothing, or a homepage card reading "0 courses", is a bug from the moment a
+ * category empties, and the 2026 reduction emptied two of these three at once.
+ */
+export function activeCourseCategories(
+  list: Pick<Course, 'category'>[] = courses,
+): CourseCategory[] {
+  return courseCategories.filter((category) =>
+    list.some((course) => course.category === category),
+  )
+}
 
-  /* ---------------------------------------------- Marketing & Business */
+export const courses: Course[] = [
   {
     slug: 'digital-media-marketing-with-ai',
     title: 'Digital Media Marketing with AI',
-    shortTitle: 'Digital Marketing with AI',
+    shortTitle: 'Digital Marketing + AI',
     category: 'Marketing & Business',
     tagline: 'Run paid campaigns, SEO and content funnels with AI doing the heavy lifting',
     description:
@@ -475,138 +349,6 @@ export const courses: Course[] = [
     ],
   },
   {
-    slug: 'tiktok-shop',
-    title: 'TikTok Shop',
-    shortTitle: 'TikTok Shop',
-    category: 'Marketing & Business',
-    tagline: 'Sell on TikTok Shop — affiliate, live selling and creator operations',
-    description:
-      'TikTok Shop course in Faisalabad covering seller and affiliate setup, product research, live selling, creator partnerships and order operations. 3 months, hands-on.',
-    overview: [
-      'TikTok Shop has become a genuine sales channel rather than a novelty, and the operators who learned it early are the ones earning from it now. This course covers both sides: running your own shop, and earning commission as an affiliate promoting other people’s products.',
-      'You will do product research against real demand signals, set up a compliant shop, produce the video content that actually sells, and run live sessions — which remain the highest-converting format on the platform and the one most sellers avoid because it is uncomfortable.',
-      'Operations get equal weight. Orders, fulfilment, returns and account health are what keep a shop alive after the first viral video, and they are where most new sellers fail.',
-    ],
-    image: '/images/generated/courses/tiktok-shop.webp',
-    icon: 'ShoppingBag',
-    duration: '3 Months',
-    durationWeeks: 12,
-    hoursPerWeek: 5,
-    level: 'Beginner to Intermediate',
-    originalFee: 30000,
-    mode: ['On-Campus', 'Live Online', 'Hybrid'],
-    language: 'Urdu + English',
-    skills: [
-      'Product Research',
-      'TikTok Shop Setup',
-      'Affiliate Marketing',
-      'Live Selling',
-      'Creator Outreach',
-      'Video Content',
-      'Order Operations',
-      'Account Health',
-    ],
-    tools: ['TikTok Shop Seller Center', 'TikTok Creator Marketplace', 'CapCut', 'Canva', 'Google Sheets'],
-    outcomes: [
-      'Research and validate products against real demand rather than guesswork',
-      'Set up and run a compliant TikTok Shop end to end',
-      'Earn affiliate commission promoting products you do not own',
-      'Run a live selling session that converts',
-      'Recruit and manage creators to sell on your behalf',
-    ],
-    curriculum: [
-      {
-        module: 'The TikTok Shop Landscape',
-        topics: [
-          'How the marketplace works: seller, affiliate, creator',
-          'Which model fits your capital and your temperament',
-          'Category rules, restricted products and compliance',
-          'Realistic economics — margins, fees and what is left',
-        ],
-      },
-      {
-        module: 'Product Research',
-        topics: [
-          'Reading demand signals instead of following hype',
-          'Sourcing locally and from wholesale',
-          'Pricing for margin after fees, shipping and returns',
-          'Validating with a small test before committing capital',
-        ],
-      },
-      {
-        module: 'Shop Setup & Listings',
-        topics: [
-          'Seller Center setup, verification and payouts',
-          'Listing optimisation: titles, images, variants',
-          'Shipping templates and delivery expectations',
-          'Account health metrics and how to protect them',
-        ],
-      },
-      {
-        module: 'Content That Sells',
-        topics: [
-          'The product video formats that consistently convert',
-          'Filming and editing on a phone with CapCut',
-          'Hooks and demonstrations — showing, not describing',
-          'Posting cadence and iterating on what works',
-        ],
-      },
-      {
-        module: 'Affiliate & Creator Operations',
-        topics: [
-          'Finding and joining profitable affiliate programmes',
-          'Creator Marketplace: outreach, samples, commission terms',
-          'Managing a roster of creators without micromanaging',
-          'Tracking attribution and paying out correctly',
-        ],
-      },
-      {
-        module: 'Live Selling & Scale',
-        topics: [
-          'Live session structure, scripting and pacing',
-          'Handling questions and objections on air',
-          'Fulfilment, returns and customer service at volume',
-          'Capstone: a live shop with tracked sales',
-        ],
-      },
-    ],
-    careers: [
-      { role: 'TikTok Shop Seller', salary: 'Income scales with the shop' },
-      { role: 'TikTok Affiliate Marketer', salary: 'Commission-based' },
-      { role: 'E-Commerce Operations Executive', salary: 'Rs 50k – 120k / month' },
-      { role: 'Creator Partnerships Manager', salary: 'Rs 60k – 140k / month' },
-    ],
-    projects: [
-      'Validated product research report with demand evidence',
-      'Fully configured TikTok Shop with optimised listings',
-      'Batch of product videos with performance data',
-      'A live selling session, recorded and reviewed',
-    ],
-    instructorSlug: 'bilal-ahmed',
-    rating: 0,
-    reviews: 0,
-    enrolled: 0,
-    featured: false,
-    badge: 'New Batch',
-    faqs: [
-      {
-        question: 'Do I need capital to start?',
-        answer:
-          'Not for the affiliate route, which is where most students begin — you promote other sellers’ products and earn commission with no inventory. Running your own shop does need working capital, and we cover how to size that honestly before you commit.',
-      },
-      {
-        question: 'Is TikTok Shop available in Pakistan?',
-        answer:
-          'Availability and seller requirements change by market and have shifted several times. We teach the platform mechanics and cover the current options for Pakistani sellers and affiliates, including the cross-border routes people are using. Ask admissions for the current position before enrolling if this is your only reason for joining.',
-      },
-      {
-        question: 'Do I have to go live on camera?',
-        answer:
-          'Live selling is the highest-converting format and we teach it properly, so you will practise it during the course. If you are set against appearing on camera, the affiliate and creator-management routes still work — but you are leaving the most profitable part of the platform on the table.',
-      },
-    ],
-  },
-  {
     slug: 'facebook-automation-and-monetization',
     title: 'Facebook Automation & Monetization',
     shortTitle: 'Facebook Monetization',
@@ -737,272 +479,178 @@ export const courses: Course[] = [
       },
     ],
   },
-
-  /* --------------------------------------------------- Design & Media */
   {
-    slug: 'graphic-designing',
-    title: 'Graphic Designing',
-    shortTitle: 'Graphic Designing',
-    category: 'Design & Media',
-    tagline: 'Photoshop, Illustrator and the judgement to use them well',
+    slug: 'content-creation',
+    title: 'Content Creation Course',
+    shortTitle: 'Content Creation',
+    category: 'Marketing & Business',
+    tagline: 'Plan it, shoot it, cut it, publish it — and get paid for it',
     description:
-      'Graphic designing course in Faisalabad — Photoshop, Illustrator, typography, branding and print-ready artwork. 3 months, portfolio-based with weekly critique.',
+      'Content creation course in Faisalabad — strategy, scriptwriting, phone videography, editing, AI-assisted production and creator monetisation. 3 months, beginner to advanced.',
     overview: [
-      'Software is the easy part of design. This course teaches the tools thoroughly, then spends the rest of its time on the thing that actually gets designers hired: the ability to make a decision and defend it.',
-      'You will work to briefs from week two — logos, social sets, packaging, print collateral — and present your work every week for critique. That process is uncomfortable and it is the entire mechanism by which people improve.',
-      'You finish with a portfolio of finished pieces and the vocabulary to explain why each one looks the way it does, which is the difference between a designer who makes pretty files and one who gets paid.',
+      'Most people who want to make content are stuck at the same place: they can see what good looks like and cannot produce it repeatedly. This programme is built around that gap. You leave with a production system — an idea pipeline, a filming setup and an editing workflow — rather than a folder of tutorials you watched once.',
+      'You publish throughout the course, not at the end of it. Every module puts work in front of an audience and reads the numbers afterwards, so the feedback comes from viewers rather than only from a marker.',
+      'The final month is about money: what brands pay for, how UGC briefs actually work, what a rate card looks like, and how to keep a client past the first invoice. Content is a craft, but it only becomes an income when it is packaged and sold like one.',
     ],
-    image: '/images/generated/courses/graphic-designing.webp',
-    icon: 'PenTool',
-    duration: '3 Months',
-    durationWeeks: 12,
-    hoursPerWeek: 6,
-    level: 'Beginner to Advanced',
-    originalFee: 40000,
-    mode: ['On-Campus', 'Live Online', 'Hybrid'],
-    language: 'Urdu + English',
-    skills: [
-      'Adobe Photoshop',
-      'Adobe Illustrator',
-      'Typography',
-      'Colour Theory',
-      'Layout & Composition',
-      'Brand Identity',
-      'Print Production',
-      'Design Critique',
-    ],
-    tools: ['Adobe Photoshop', 'Adobe Illustrator', 'Adobe InDesign', 'Figma', 'Canva'],
-    outcomes: [
-      'Work confidently in Photoshop and Illustrator without following tutorials',
-      'Build a complete brand identity from brief to guidelines',
-      'Set type that is readable, hierarchical and appropriate',
-      'Prepare artwork that a printer will accept without corrections',
-      'Present and defend design decisions to a client',
-    ],
-    curriculum: [
-      {
-        module: 'Design Fundamentals',
-        topics: [
-          'Composition, balance, hierarchy and whitespace',
-          'Colour theory and building a usable palette',
-          'Typography: classification, pairing, spacing',
-          'Reading a brief and asking the right questions',
-        ],
-      },
-      {
-        module: 'Adobe Illustrator',
-        topics: [
-          'Vectors, paths and the pen tool until it is automatic',
-          'Shape building, alignment and pathfinder',
-          'Logo construction and grid-based marks',
-          'Exporting vector assets correctly for every use',
-        ],
-      },
-      {
-        module: 'Adobe Photoshop',
-        topics: [
-          'Non-destructive editing: layers, masks, smart objects',
-          'Retouching and compositing',
-          'Colour correction and adjustment layers',
-          'Export settings for web and print',
-        ],
-      },
-      {
-        module: 'Brand Identity',
-        topics: [
-          'Research, moodboards and concept development',
-          'Logo systems: primary, secondary, mark, lockups',
-          'Building a brand guideline document',
-          'Applying an identity across touchpoints',
-        ],
-      },
-      {
-        module: 'Layout & Print',
-        topics: [
-          'Multi-page layout in InDesign',
-          'Grids, margins and baseline alignment',
-          'CMYK, bleed, trim and resolution',
-          'Working with a printer and pre-flight checks',
-        ],
-      },
-      {
-        module: 'Portfolio & Practice',
-        topics: [
-          'Weekly critique and iteration',
-          'Case-study writing: the problem, the thinking, the result',
-          'Pricing design work and scoping revisions',
-          'Capstone: a full brand identity with guidelines',
-        ],
-      },
-    ],
-    careers: [
-      { role: 'Graphic Designer', salary: 'Rs 50k – 130k / month' },
-      { role: 'Brand Designer', salary: 'Rs 70k – 180k / month' },
-      { role: 'Freelance Designer', salary: '$10 – $40 / hour' },
-      { role: 'In-House Design Executive', salary: 'Rs 45k – 110k / month' },
-    ],
-    projects: [
-      'Complete brand identity with guidelines document',
-      'Social media template system for a real business',
-      'Packaging design, print-ready',
-      'Multi-page brochure or company profile',
-    ],
-    instructorSlug: 'zainab-khan',
-    rating: 0,
-    reviews: 0,
-    enrolled: 0,
-    featured: true,
-    faqs: [
-      {
-        question: 'Do I need to be able to draw?',
-        answer:
-          'No. Drawing ability and design ability are different skills — most working graphic designers are not illustrators. What the course requires is a willingness to look at your own work critically and change it, which is learned rather than innate.',
-      },
-      {
-        question: 'Do I need to buy Adobe software?',
-        answer:
-          'Not to attend — the on-campus lab has licensed installations available to enrolled students. If you want to work at home you will need your own subscription, and we cover the student pricing options and the free alternatives worth knowing.',
-      },
-      {
-        question: 'Will I have a portfolio by the end?',
-        answer:
-          'Yes, and that is the point of the structure. Every brief from week two produces a finished piece, and the final module is spent writing them up as case studies rather than dumping images into a folder.',
-      },
-    ],
-  },
-  {
-    slug: 'video-editing',
-    title: 'Video Editing: Beginner to Pro',
-    shortTitle: 'Video Editing',
-    category: 'Design & Media',
-    tagline: 'Premiere Pro, After Effects and the short-form work clients actually buy',
-    description:
-      'Video editing course in Faisalabad — Premiere Pro, After Effects, colour, sound and short-form reels. 3 months, from first cut to paid client work.',
-    overview: [
-      'Every business now needs video, and almost none of them can edit it themselves. This course takes you from your first timeline to the standard a paying client expects, with particular weight on the short-form work that dominates current demand.',
-      'You will edit constantly. Long-form interviews, product videos, reels, motion graphics and a full showreel — each with feedback, because editing is a craft that improves through repetition and critique rather than through watching tutorials.',
-      'Sound, colour and pacing get proper time. They are what separate an edit that looks amateur from one that looks paid for, and they are the areas self-taught editors most often skip.',
-    ],
-    image: '/images/generated/courses/video-editing.webp',
+    image: '/images/generated/courses/content-creation.webp',
     icon: 'Clapperboard',
     duration: '3 Months',
     durationWeeks: 12,
     hoursPerWeek: 6,
     level: 'Beginner to Advanced',
-    originalFee: 40000,
+    originalFee: 60000,
     mode: ['On-Campus', 'Live Online', 'Hybrid'],
     language: 'Urdu + English',
     skills: [
-      'Adobe Premiere Pro',
-      'Adobe After Effects',
-      'Short-Form Editing',
-      'Colour Grading',
-      'Sound Design',
-      'Motion Graphics',
-      'Storytelling',
-      'Client Delivery',
+      'Content Strategy',
+      'Scriptwriting',
+      'Short-Form Video',
+      'Mobile Videography',
+      'Video Editing',
+      'Thumbnail & Graphic Design',
+      'AI-Assisted Production',
+      'Personal Branding',
+      'UGC Production',
+      'Content Analytics',
     ],
-    tools: ['Adobe Premiere Pro', 'Adobe After Effects', 'DaVinci Resolve', 'CapCut', 'Audition'],
+    tools: [
+      'CapCut',
+      'Adobe Premiere Pro',
+      'Canva',
+      'Lightroom Mobile',
+      'ChatGPT',
+      'TikTok',
+      'YouTube Studio',
+      'Meta Business Suite',
+    ],
     outcomes: [
-      'Cut a coherent story from unstructured footage',
-      'Grade footage so it looks intentional rather than accidental',
-      'Mix dialogue, music and effects to a broadcast-acceptable level',
-      'Build motion graphics and animated titles in After Effects',
-      'Deliver to client specification, on time, in the right format',
+      'Turn one idea into a week of content across three platforms',
+      'Write a hook and a script that survives the first three seconds',
+      'Shoot broadcast-acceptable video on a phone, in a normal room',
+      'Edit a short-form cut end to end, with captions and sound design',
+      'Read retention and reach data and decide what to make next',
+      'Price and pitch UGC and brand work with a rate card you can defend',
     ],
     curriculum: [
       {
-        module: 'Editing Foundations',
+        module: 'Finding the Angle',
         topics: [
-          'Premiere Pro interface, projects and media management',
-          'The language of the cut: pacing, rhythm, continuity',
-          'Assembly, rough cut, fine cut',
-          'Organising a project so you can find anything in it',
+          'Choosing a niche narrow enough to be known for',
+          'Who the content is for, and what it promises them',
+          'Platform fit — where this particular format actually travels',
+          'Teardown: reverse-engineering creators who already work',
         ],
       },
       {
-        module: 'Short-Form Video',
+        module: 'Writing for Attention',
         topics: [
-          'Vertical framing and safe zones',
-          'Hooks and retention editing for reels and TikToks',
-          'Captions, subtitles and text animation',
-          'Fast turnaround workflows in CapCut and Premiere',
+          'Hooks: the first line, and why most content dies there',
+          'Script structures for 30, 60 and 180 seconds',
+          'Story beats — tension, turn and payoff in a short cut',
+          'Captions, titles and the words that do the clicking',
         ],
       },
       {
-        module: 'Sound',
+        module: 'Shooting With What You Have',
         topics: [
-          'Dialogue cleanup, noise reduction and levels',
-          'Music selection, licensing and ducking',
-          'Sound effects and why silence is a tool',
-          'Mixing to consistent loudness',
+          'Phone camera settings that matter and the ones that do not',
+          'Framing, composition and shooting for vertical',
+          'Light: windows, cheap panels and what to avoid',
+          'Sound — the half of video nobody notices until it is bad',
         ],
       },
       {
-        module: 'Colour',
+        module: 'The Edit',
         topics: [
-          'Scopes: reading an image objectively',
-          'Correction versus grading',
-          'Matching shots across a sequence',
-          'LUTs and building a consistent look',
+          'CapCut end to end, then the same cut in Premiere Pro',
+          'Pacing, cuts and holding attention through the middle',
+          'Captions, B-roll, sound design and music licensing',
+          'Thumbnails and covers in Canva that earn the click',
         ],
       },
       {
-        module: 'Motion Graphics',
+        module: 'AI in the Pipeline',
         topics: [
-          'After Effects fundamentals: layers, keyframes, easing',
-          'Animated titles and lower thirds',
-          'Masking, tracking and simple compositing',
-          'Building reusable templates',
+          'Ideation and research without ending up generic',
+          'AI-assisted scripting, and editing the output back into your voice',
+          'Repurposing one long piece into a week of short ones',
+          'Where AI belongs in the workflow, and where it is a liability',
         ],
       },
       {
-        module: 'Working as an Editor',
+        module: 'Getting Paid',
         topics: [
-          'Client briefs, revisions and scope control',
-          'Export presets for every platform',
-          'File delivery, archiving and backups',
-          'Capstone: a showreel plus one full client-standard edit',
+          'UGC: what brands are actually buying, and how briefs read',
+          'Brand deals, affiliate work and platform monetisation',
+          'Rate cards, invoicing and scoping revisions before they happen',
+          'Capstone: a published body of work plus a live pitch to a real brief',
         ],
       },
     ],
     careers: [
-      { role: 'Video Editor', salary: 'Rs 50k – 140k / month' },
-      { role: 'Short-Form Content Editor', salary: '$300 – $1,500 / month per retainer' },
-      { role: 'Motion Graphics Designer', salary: 'Rs 70k – 160k / month' },
-      { role: 'Freelance Editor', salary: '$10 – $35 / hour' },
+      { role: 'Content Creator', salary: 'Rs 50k – 120k / month' },
+      { role: 'UGC Creator', salary: '$150 – $500 / video' },
+      { role: 'Social Content Producer', salary: 'Rs 60k – 140k / month' },
+      { role: 'Freelance Video Editor', salary: '$12 – $35 / hour' },
     ],
     projects: [
-      'Batch of short-form reels with retention analysis',
-      'Product or promotional video, brief to delivery',
-      'Animated titles and motion graphics package',
-      'Personal showreel',
+      'A niche, positioning statement and 30-day content plan',
+      'Twelve short-form videos, shot and edited to brief',
+      'One long-form piece repurposed into a week of short cuts',
+      'A UGC sample reel and rate card ready to send to brands',
     ],
-    instructorSlug: 'zainab-khan',
+    instructorSlug: 'muhammad-adnan-bashir',
     rating: 0,
     reviews: 0,
     enrolled: 0,
-    featured: false,
-    badge: 'Fast Track',
+    featured: true,
+    badge: 'New Batch',
     faqs: [
       {
-        question: 'What kind of computer do I need?',
+        question: 'Do I need a camera, or is a phone enough?',
         answer:
-          'Video editing is genuinely hardware-dependent. Around 16GB of RAM and a dedicated graphics card make for a comfortable experience; 8GB will work for short-form with proxies but will frustrate you on longer projects. The campus edit suites are available to enrolled students if your machine is not up to it.',
+          'A phone is enough, and it is what we teach on. Modern phone cameras out-resolve what these platforms compress anyway; the difference between amateur and professional footage is light, sound and framing, which cost almost nothing to fix. Bring a phone and headphones.',
       },
       {
-        question: 'Do I need my own footage?',
+        question: 'Do I have to appear on camera?',
         answer:
-          'No. Footage packs are provided for every exercise. You are welcome to work with your own material, and students who do tend to finish with a more distinctive showreel.',
+          'No. Faceless content — screen recordings, product work, voiceover, text-on-video, UGC shot over the shoulder — is a complete route and we teach it alongside the on-camera one. Choose based on what you will actually keep doing after the course ends.',
       },
       {
-        question: 'Is CapCut enough, or do I need Adobe?',
+        question: 'How is this different from the Social Media Marketing course?',
         answer:
-          'CapCut is genuinely capable for short-form and we teach it, because it is what a lot of paid work is actually cut in. Premiere and After Effects are what longer-form and agency clients expect, and knowing both is what lets you take either job.',
+          'This one is about making the content: writing, shooting, editing and being paid for the craft. Social Media Marketing is about running accounts — strategy, paid campaigns, community and client reporting. Creators take this one; account managers take that one. They pair well in either order.',
+      },
+      {
+        question: 'Will AI make this skill obsolete?',
+        answer:
+          'It has changed the production half considerably, which is why a whole module is spent on it. What it has not changed is knowing what is worth making and why a particular audience responds to it. We teach the tools as part of the pipeline rather than pretending they are not there.',
       },
     ],
   },
 ]
+
+/**
+ * Courses withdrawn from the catalogue, kept as a list rather than deleted
+ * outright.
+ *
+ * Two things still need to know these slugs after the entries are gone.
+ * `db:seed` deletes exactly these rows — a seed that upserts and never removes
+ * would leave a retired course sitting in Postgres, and the assistant reads the
+ * TABLE, not this file, so it would carry on offering a course nobody teaches.
+ * And `next.config.mjs` keeps each URL alive as a permanent redirect, because
+ * every one of them has been indexed and linked to from the blog.
+ *
+ * Naming them explicitly is what makes the delete safe: a prune that removed
+ * "anything not in the seed" would also remove a course an admin had added
+ * through /admin/courses, which is a supported thing to do.
+ */
+export const retiredCourseSlugs = [
+  'full-stack-development-with-ai',
+  'tiktok-shop',
+  'graphic-designing',
+  'video-editing',
+] as const
 
 /* ---------------------------------------------------------------------------
  * Pure helpers

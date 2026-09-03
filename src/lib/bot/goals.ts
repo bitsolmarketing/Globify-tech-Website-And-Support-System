@@ -170,14 +170,24 @@ interface GoalPlan {
   branches: Partial<Record<'default' | Leaning, Branch>>
 }
 
-/** Slugs refer to `globify_site.courses`, which the admin already edits. */
+/**
+ * Slugs refer to `globify_site.courses`, which the admin already edits.
+ *
+ * The catalogue is three marketing programmes. That is why no goal asks the
+ * creative/technical follow-up any more: the question only earns its place
+ * when the answer changes the recommendation, and with development, design and
+ * video all withdrawn every branch led to the same place. Asking anyway would
+ * be one more message between a student and an answer, for nothing. Restore
+ * `requiresLeaning` on a goal the moment a course lands that genuinely splits
+ * it — the machinery in `script.ts` is untouched and still works.
+ */
 const BY_GOAL: Record<StudentGoal, GoalPlan> = {
   job: {
     requiresLeaning: false,
     branches: {
       default: {
         primary: 'digital-media-marketing-with-ai',
-        alternatives: ['full-stack-development-with-ai', 'graphic-designing'],
+        alternatives: ['social-media-marketing-with-ai'],
         reason: {
           en: 'it covers the marketing skills local businesses hire for most often — ads, SEO, content and reporting — and you finish with campaign work you can show in an interview',
           ur: 'اس میں وہ مارکیٹنگ سکلز ہیں جن پر مقامی کاروبار سب سے زیادہ بھرتی کرتے ہیں — ایڈز، ایس ای او، کانٹینٹ اور رپورٹنگ — اور آخر میں آپ کے پاس دکھانے کے لیے کیمپین کا کام ہوتا ہے',
@@ -186,56 +196,21 @@ const BY_GOAL: Record<StudentGoal, GoalPlan> = {
           pa: 'ایس وچ اوہ مارکیٹنگ سکل نیں جنہاں تے مقامی کاروبار سب توں ودھ بھرتی کردے نیں',
         },
       },
-      creative: {
-        primary: 'graphic-designing',
-        alternatives: ['video-editing'],
-        reason: {
-          en: 'design roles are the most common creative openings here, and the course is built around a portfolio rather than theory',
-          ur: 'ڈیزائن کی آسامیاں یہاں سب سے عام تخلیقی مواقع ہیں، اور یہ کورس تھیوری کے بجائے پورٹ فولیو پر بنا ہے',
-          ur_roman:
-            'design roles yahan sab se aam creative openings hain, aur ye course theory ke bajaye portfolio par bana hai',
-          pa: 'ڈیزائن دیاں آسامیاں ایتھے سب توں عام تخلیقی موقعے نیں',
-        },
-      },
-      technical: {
-        primary: 'full-stack-development-with-ai',
-        alternatives: ['facebook-automation-and-monetization'],
-        reason: {
-          en: 'development is the most portable technical skill we teach, and you build real applications rather than exercises',
-          ur: 'ڈویلپمنٹ وہ تکنیکی مہارت ہے جو ہر جگہ کام آتی ہے، اور آپ مشقوں کے بجائے اصل ایپلیکیشنز بناتے ہیں',
-          ur_roman:
-            'development wo technical skill hai jo har jagah kaam aati hai, aur aap exercises ke bajaye real applications banate hain',
-          pa: 'ڈویلپمنٹ اوہ تکنیکی ہنر اے جیہڑا ہر تھاں کم آندا اے',
-        },
-      },
     },
   },
 
   freelancing: {
-    // Design, video, marketing and development are all sound answers here, so
-    // the follow-up genuinely narrows things rather than padding the flow.
-    requiresLeaning: true,
+    requiresLeaning: false,
     branches: {
-      creative: {
-        primary: 'graphic-designing',
-        alternatives: ['video-editing'],
+      default: {
+        primary: 'social-media-marketing-with-ai',
+        alternatives: ['content-creation', 'digital-media-marketing-with-ai'],
         reason: {
-          en: 'design work sells in small pieces — logos, social posts, brand kits — which is how most freelancers land their first clients',
-          ur: 'ڈیزائن کا کام چھوٹے حصوں میں بکتا ہے — لوگو، سوشل پوسٹس، برانڈ کٹس — زیادہ تر فری لانسرز کے پہلے کلائنٹ ایسے ہی آتے ہیں',
+          en: 'social work sells in small, repeatable pieces — a content calendar, a set of ads, a page managed month to month — which is how most freelancers land a first client and then keep them',
+          ur: 'سوشل کا کام چھوٹے، بار بار ملنے والے حصوں میں بکتا ہے — کانٹینٹ کیلنڈر، ایڈز، مہینہ وار پیج مینجمنٹ — زیادہ تر فری لانسرز کا پہلا کلائنٹ ایسے ہی آتا ہے اور پھر ٹکتا ہے',
           ur_roman:
-            'design ka kaam chote pieces mein bikta hai — logos, social posts, brand kits — zyada tar freelancers ke pehle clients aise hi aate hain',
-          pa: 'ڈیزائن دا کم نکّے حصیاں وچ وکدا اے — لوگو، سوشل پوسٹاں، برانڈ کٹاں',
-        },
-      },
-      technical: {
-        primary: 'full-stack-development-with-ai',
-        alternatives: ['digital-media-marketing-with-ai'],
-        reason: {
-          en: 'websites are well-defined projects with a clear finish line, which makes them straightforward to quote and deliver',
-          ur: 'ویب سائٹس واضح پروجیکٹس ہوتے ہیں جن کا اختتام صاف ہوتا ہے، اس لیے ان کی قیمت لگانا اور مکمل کرنا آسان ہے',
-          ur_roman:
-            'websites clear projects hote hain jin ka end point saaf hota hai, is liye inhein quote karna aur deliver karna asaan hai',
-          pa: 'ویب سائٹاں صاف پروجیکٹ ہندیاں نیں جنہاں دا انت واضح ہندا اے',
+            'social ka kaam chote, baar baar milne wale pieces mein bikta hai — content calendar, ads, maheenawar page management — zyada tar freelancers ka pehla client aise hi aata hai aur phir tikta hai',
+          pa: 'سوشل دا کم نکّے، واری واری ملݨ والے حصیاں وچ وکدا اے — کانٹینٹ کیلنڈر، اشتہار، مہینے وار پیج سنبھالݨا',
         },
       },
     },
@@ -245,14 +220,14 @@ const BY_GOAL: Record<StudentGoal, GoalPlan> = {
     requiresLeaning: false,
     branches: {
       default: {
-        primary: 'tiktok-shop',
-        alternatives: ['social-media-marketing-with-ai', 'facebook-automation-and-monetization'],
+        primary: 'facebook-automation-and-monetization',
+        alternatives: ['social-media-marketing-with-ai', 'digital-media-marketing-with-ai'],
         reason: {
-          en: 'it walks through setting up and running an actual shop — product, content and orders — so you finish with the thing running rather than planned',
-          ur: 'اس میں ایک اصل شاپ بنانا اور چلانا سکھایا جاتا ہے — پروڈکٹ، کانٹینٹ اور آرڈرز — یعنی آخر میں چیز چل رہی ہوتی ہے، صرف منصوبہ نہیں ہوتی',
+          en: 'it covers the part a small business actually runs on — growing the page, answering enquiries automatically and taking orders through it — so one person can keep it going without being on the phone all day',
+          ur: 'اس میں وہ حصہ آتا ہے جس پر چھوٹا کاروبار واقعی چلتا ہے — پیج بڑھانا، سوالوں کے خودکار جواب اور اسی سے آرڈر لینا — تاکہ ایک بندہ سارا دن فون پر رہے بغیر اسے چلا سکے',
           ur_roman:
-            'is mein ek asal shop banana aur chalana sikhaya jata hai — product, content aur orders — yani end par cheez chal rahi hoti hai, sirf plan nahi hoti',
-          pa: 'ایس وچ اک اصلی شاپ بݨاؤݨ تے چلاؤݨ سکھایا جاندا اے',
+            'is mein wo hissa aata hai jis par chota business asal mein chalta hai — page barhana, sawalon ke khudkar jawab aur usi se order lena — taake ek banda sara din phone par rahe baghair ise chala sake',
+          pa: 'ایس وچ اوہ حصہ آندا اے جیدے تے نکّا کاروبار سچ مچ چلدا اے — پیج ودھاؤݨا، سوالاں دے آپݨے آپ جواب تے اوسے راہیں آرڈر لینا',
         },
       },
     },
@@ -262,14 +237,14 @@ const BY_GOAL: Record<StudentGoal, GoalPlan> = {
     requiresLeaning: false,
     branches: {
       default: {
-        primary: 'full-stack-development-with-ai',
-        alternatives: ['digital-media-marketing-with-ai', 'facebook-automation-and-monetization'],
+        primary: 'digital-media-marketing-with-ai',
+        alternatives: ['social-media-marketing-with-ai', 'facebook-automation-and-monetization'],
         reason: {
-          en: 'it is the broadest AI course we run — you build working software with AI rather than only learning what the tools are',
-          ur: 'یہ ہمارا سب سے وسیع اے آئی کورس ہے — آپ صرف ٹولز کے نام نہیں سیکھتے بلکہ اے آئی کے ساتھ چلنے والا سافٹ ویئر بناتے ہیں',
+          en: 'it is the broadest of our AI-assisted programmes — you use the tools on real campaigns, with the analytics to show what they changed, rather than only learning what they are called',
+          ur: 'یہ ہمارے اے آئی پروگراموں میں سب سے وسیع ہے — آپ ٹولز کو اصل کیمپینز پر استعمال کرتے ہیں اور اینالٹکس سے دیکھتے ہیں کہ فرق کیا پڑا، صرف نام نہیں سیکھتے',
           ur_roman:
-            'ye hamara sab se broad AI course hai — aap sirf tools ke naam nahi seekhte balke AI ke saath chalne wala software banate hain',
-          pa: 'ایہہ ساڈا سب توں وڈا اے آئی کورس اے',
+            'ye hamare AI programmes mein sab se broad hai — aap tools ko asal campaigns par use karte hain aur analytics se dekhte hain ke farq kya para, sirf naam nahi seekhte',
+          pa: 'ایہہ ساڈے اے آئی پروگراماں وچوں سب توں وڈا اے — تسی ٹول اصلی کیمپین تے ورتدے او',
         },
       },
     },

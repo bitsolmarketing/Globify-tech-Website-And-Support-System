@@ -31,6 +31,7 @@ import {
   courseDetails,
   courseListIntro,
   courseOptions,
+  fallbackNotice,
   handoffNotice,
   helpMenu,
   internshipAnswer,
@@ -43,6 +44,7 @@ import {
   quickActions,
   resolveNumbered,
   resolvePending,
+  stuckNotice,
   welcome,
   type CaptureFlow,
   type CaptureState,
@@ -160,18 +162,20 @@ async function route(message: InboundMessage): Promise<void> {
      and they are exactly who the admissions team needs to be able to call. */
   await noteLead(context, message.text)
 
-  /* On WhatsApp, any typed text at all shows the menu — cancelling whatever
-     else was in progress, including a half-finished capture. Ads send
-     unpredictable replies that rarely match a known intent, and the menu is
-     the one answer guaranteed to land instead of risking a dead end. Button
-     taps (kind 'reply') are untouched — this only catches free text. */
-  if (isWhatsApp && message.kind === 'text') {
-    await clearCapture(conversation.id)
-    return sayMenu(
-      context,
-      GREETINGS.includes(lowered) ? welcome(context.language) : helpMenu(context.language),
-    )
-  }
+  /* There was a rule here that answered ANY typed text on WhatsApp with the
+     menu, cancelling whatever was in progress. It was meant to stop ad traffic
+     dead-ending on an unrecognised reply; instead it WAS the dead end. A name,
+     a phone number and a city are all typed text, so no form could ever be
+     completed: tapping "Admission" asked for a name, the name was answered
+     with the menu, and tapping "Admission" again asked for the name again.
+     Every typed question — fees, timings, "which course for freelancing" —
+     came back as the menu too, so the catalogue, the FAQs and the model were
+     all unreachable from WhatsApp, and a complaint got a cheerful menu instead
+     of a person.
+
+     The guarantee it was reaching for belongs at the END of routing, where
+     nothing has matched — see `answerWithModel` — not in front of the capture
+     machine and the intent router. */
 
   /* A greeting resets, even mid-capture. Below the capture check it would be
      read as an answer to whatever question is outstanding and rejected, leaving
@@ -461,9 +465,19 @@ async function answerWithModel(context: Context, message: string): Promise<void>
 
   /* The model failing must never read as the bot being broken — ads are
      driving this traffic, and a visitor who sees an apology disengages instead
-     of converting. Falling back to the human-handoff reply keeps the reply
-     warm and flags the conversation for a real person instead. */
-  if (!text) return escalate(context)
+     of converting. The menu is the one reply that always lands, so that is
+     what an unanswerable question gets.
+   *
+   * This used to call `escalate`, which sets `handedOff` — and `handedOff`
+   * silences the bot on that thread until the 24-hour window rolls over. So a
+   * single Gemini timeout, or a spent quota, did not degrade one answer: it
+   * ended the conversation, invisibly, for the rest of the day. A handoff is
+   * something a visitor asks for, not something an outage does to them. The
+   * lead is still flagged, so the team can still pick it up. */
+  if (!text) {
+    await noteLead(context, undefined, { status: 'needs a callback' })
+    return sayMenu(context, fallbackNotice(context.language))
+  }
   return say(context, text, quickActions(context.language))
 }
 
@@ -491,16 +505,23 @@ async function continueCapture(
   state: CaptureState,
   answer: string,
 ): Promise<void> {
-  const resolved =
-    context.channel === 'whatsapp'
-      ? answer
-      : resolveNumbered(promptFor(state, context.language), answer)
+  /* A bare "2" answering the options offered last turn, on every channel.
+     WhatsApp used to be excluded on the grounds that its options are tappable
+     — but the chips scroll away and people type the number anyway. It only
+     fires on a single digit alone, so it cannot swallow a name or a number. */
+  const resolved = resolveNumbered(promptFor(state, context.language), answer)
 
   const outcome = advanceCapture(state, resolved, context.language)
 
   if (outcome.status === 'cancelled') {
     await clearCapture(context.conversationId)
-    return say(context, cancelled(context.language))
+    /* Both exits land on the menu. Leaving a half-finished form with a line of
+       text and nothing to tap is what stranded people who did not know that
+       typing *menu* was the way out. */
+    return sayMenu(
+      context,
+      outcome.reason === 'stuck' ? stuckNotice(context.language) : cancelled(context.language),
+    )
   }
 
   if (outcome.status === 'ask') {

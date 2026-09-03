@@ -1,14 +1,17 @@
 import type { NextRequest } from 'next/server'
 
 import { handleInbound } from '@/lib/bot/handler'
+import { applyDeliveryStatus, recordOptOut } from '@/lib/data/broadcasts'
 import {
   channelFor,
   metaConfig,
   normaliseMessagingEvents,
   normaliseWhatsAppMessages,
+  normaliseWhatsAppStatuses,
   parseWebhookBody,
   verifyMetaSignature,
 } from '@/lib/meta'
+import { isOptOutRequest } from '@/lib/whatsapp/format'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -118,6 +121,15 @@ export async function POST(request: NextRequest) {
     return new Response('OK', { status: 200 })
   }
 
+  /* Delivery receipts for messages this app has already sent. They arrive on
+     the same webhook as inbound messages, carry no sender, and are what turns a
+     broadcast's "400 accepted" into "382 delivered, 11 read, 7 failed".
+     Handled before the message loop and independently of it: a receipt is not
+     something the bot should ever be asked to answer. */
+  if (channel === 'whatsapp') {
+    await recordDeliveryStatuses(body)
+  }
+
   const messages =
     channel === 'whatsapp'
       ? normaliseWhatsAppMessages(body)
@@ -135,6 +147,18 @@ export async function POST(request: NextRequest) {
    * conversation, and answering them concurrently races on the capture state:
    * both would read the same step and ask the same question twice. */
   for (const message of messages) {
+    /* "STOP" is an instruction, not a question, and it has to be honoured
+       whatever the assistant goes on to say. Recorded before the handler runs
+       so that a reply already in flight is the last one that number receives,
+       and so a handler failure cannot lose the request. */
+    if (channel === 'whatsapp' && message.text && isOptOutRequest(message.text)) {
+      try {
+        await recordOptOut(message.senderId, message.text.slice(0, 191), 'inbound-stop')
+      } catch (error) {
+        console.error('[meta] could not record an opt-out request', error)
+      }
+    }
+
     await handleInbound({
       channel,
       messageId: message.messageId,
@@ -151,4 +175,22 @@ export async function POST(request: NextRequest) {
      handler makes the retries that do happen harmless, but there is no reason
      to ask for them. A failure here is logged, not retried. */
   return new Response('OK', { status: 200 })
+}
+
+/**
+ * Apply every delivery receipt in one delivery.
+ *
+ * Failures are swallowed per receipt. A receipt for a message this application
+ * did not send — the bot's own replies produce them too — simply finds no row,
+ * and a database blip must not turn into a non-200 that has Meta redeliver the
+ * whole batch, inbound messages included.
+ */
+async function recordDeliveryStatuses(body: Parameters<typeof normaliseWhatsAppStatuses>[0]) {
+  for (const update of normaliseWhatsAppStatuses(body)) {
+    try {
+      await applyDeliveryStatus(update.messageId, update.status, update.error)
+    } catch (error) {
+      console.error('[meta] could not record a delivery status', error)
+    }
+  }
 }

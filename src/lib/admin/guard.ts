@@ -21,12 +21,19 @@ export async function requireAdmin(): Promise<{ id: string; email: string }> {
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
 
+/**
+ * The same contract as `ActionResult`, for the actions that have something to
+ * hand back — how many recipients a filter matched, how far a send got. A form
+ * that has to call the action and then re-fetch to find out what it did has a
+ * window in between where it shows the previous answer.
+ */
+export type DataResult<T> = { ok: true; data: T } | { ok: false; error: string }
+
 /** Uniform error handling so a form never sees a raw driver exception. */
-export async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
+export async function runDataAction<T>(fn: () => Promise<T>): Promise<DataResult<T>> {
   try {
     await requireAdmin()
-    await fn()
-    return { ok: true }
+    return { ok: true, data: await fn() }
   } catch (error) {
     /* `redirect()` throws a control-flow signal that must not be swallowed. */
     if (
@@ -50,4 +57,18 @@ export async function runAction(fn: () => Promise<void>): Promise<ActionResult> 
 
     return { ok: false, error: message }
   }
+}
+
+/**
+ * The common case: an action that either worked or did not.
+ *
+ * Defined in terms of `runDataAction` rather than beside it, so there is one
+ * place that decides how an authorisation failure, a redirect signal and a
+ * duplicate-key error are each handled. Two copies of that logic drift, and the
+ * drift shows up as one form reporting a real error while another says
+ * "something went wrong".
+ */
+export async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
+  const result = await runDataAction(fn)
+  return result.ok ? { ok: true } : result
 }

@@ -209,6 +209,10 @@ export function courseSchema(course: Course, campaign: { discountPercent: number
         availability: 'https://schema.org/InStock',
         url: absoluteUrl(`/courses/${course.slug}`),
         validThrough,
+        /* `validThrough` is the schema.org property; `priceValidUntil` is the
+           one Google actually reads to decide whether a listed price has gone
+           stale. Same instant, stated for both audiences. */
+        priceValidUntil: validThrough,
       },
     ],
     hasCourseInstance: course.mode.map((mode) => ({
@@ -348,19 +352,48 @@ export function imageObjectSchema(
 
 /* ------------------------------------------------------------- Offer ----- */
 
+/**
+ * The site-wide campaign discount.
+ *
+ * Modelled as an AggregateOffer rather than an Offer, because it is one promo
+ * spanning many courses at different fees — which is precisely what
+ * AggregateOffer exists to express. The distinction is not academic: a plain
+ * Offer carrying `priceCurrency` with no `price` is invalid, and Google drops
+ * the whole node rather than guessing what the price was.
+ *
+ * `lowPrice`/`highPrice` are the *discounted* fees, so the markup states what a
+ * visitor would actually pay today. Pass the catalogue being displayed; with no
+ * courses there is no price range to state, so the priced fields are omitted
+ * entirely instead of being emitted empty.
+ */
 export function campaignOfferSchema(
   offer: Pick<CampaignSettings, 'name' | 'discountPercent'> & { deadline: Date },
+  courses: readonly Course[] = [],
 ): Json {
   const validThrough = offer.deadline.toISOString()
   const validFrom = new Date(offer.deadline.getTime() - 14 * 86_400_000).toISOString()
+  const fees = courses.map((course) => discountedFee(course, offer.discountPercent))
+
+  const priced: Json = fees.length
+    ? {
+        '@type': 'AggregateOffer',
+        priceCurrency: 'PKR',
+        lowPrice: Math.min(...fees),
+        highPrice: Math.max(...fees),
+        offerCount: fees.length,
+        /* Google reads `priceValidUntil`, not schema.org's `validThrough`, when
+           deciding whether a price is stale. Emit both: the same instant, once
+           for the spec and once for the consumer that matters. */
+        priceValidUntil: validThrough,
+      }
+    : { '@type': 'Offer' }
 
   return {
-    '@type': 'Offer',
+    ...priced,
     name: offer.name,
-    description: `${offer.discountPercent}% discount on every professional course at ${siteConfig.name} for Pakistan's Independence Day.`,
+    description: `${offer.discountPercent}% discount on every professional course at ${siteConfig.name}.`,
     url: absoluteUrl('/courses'),
     availability: 'https://schema.org/LimitedAvailability',
-    priceCurrency: 'PKR',
     validFrom,
     validThrough,
     seller: { '@id': ORG_ID },

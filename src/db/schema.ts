@@ -695,6 +695,686 @@ export const conversationMessages = globifySite.table(
 )
 
 /* ---------------------------------------------------------------------------
+ * Learning portal — students, instructors and everything a cohort produces
+ * ===========================================================================
+ *
+ * Everything below this line belongs to the LMS at `/student` and
+ * `/instructor`. It is deliberately separate from the marketing tables above:
+ * `courses` describes what is *sold*, these tables describe what is *taught*.
+ *
+ * The join between the two is `batches.course_id`. A course is a syllabus that
+ * exists once; a batch is one delivery of it, to one group, on one timetable,
+ * by one instructor — so attendance, assignments and grades all hang off the
+ * batch and never off the course.
+ *
+ * No foreign-key constraints, matching every table above. Ids are plain
+ * `varchar(100)` with an index on the joining column. That is the house style
+ * here because the seed and the admin both write rows in an order constraints
+ * would reject, and because the pooler makes a deferred constraint check its
+ * own kind of surprise. The data layer enforces these relationships instead —
+ * `src/lib/data/portal.ts` is the only writer.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Portal accounts live in their own table, not in `admin_users`.
+ *
+ * A student signing in must not be able to become an administrator by any
+ * route, including a bug. Keeping the two populations in separate tables means
+ * the admin sign-in query can never return a student row — not "should not",
+ * *cannot*, because it does not read this table. The two sessions are
+ * separately encrypted cookies as well; see `src/portal-auth.config.ts`.
+ */
+export const PORTAL_ROLES = ['student', 'instructor'] as const
+export type PortalRole = (typeof PORTAL_ROLES)[number]
+
+export const PORTAL_USER_STATUSES = ['active', 'suspended'] as const
+export type PortalUserStatus = (typeof PORTAL_USER_STATUSES)[number]
+
+export const portalUsers = globifySite.table(
+  'portal_users',
+  {
+    id: rowId().primaryKey(),
+    /** Stored lower-cased — see the note on `adminUsers.email`. */
+    email: varchar('email', { length: 191 }).notNull(),
+    name: varchar('name', { length: 191 }).notNull(),
+    /** bcrypt hash — never the plaintext. */
+    passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+    role: varchar('role', { length: 16 }).$type<PortalRole>().notNull(),
+    phone: varchar('phone', { length: 64 }),
+    /** Uploaded through the same `/uploads` pipeline the admin forms use. */
+    avatarUrl: varchar('avatar_url', { length: 500 }),
+    headline: varchar('headline', { length: 255 }),
+    bio: text('bio'),
+    /**
+     * Instructors are also public content — the `authors` row rendered on a
+     * course page. Linking by slug rather than id keeps that association
+     * readable in the database and survives a re-seed, which regenerates
+     * `authors.id` but never the slug.
+     */
+    authorSlug: varchar('author_slug', { length: 191 }),
+    status: varchar('status', { length: 16 })
+      .$type<PortalUserStatus>()
+      .notNull()
+      .default('active'),
+    /**
+     * Set when an admin provisions the account with a temporary password. The
+     * portal layout diverts to `/portal/password` until it is cleared, so a
+     * generated password cannot quietly become a permanent one.
+     */
+    mustChangePassword: boolean('must_change_password').notNull().default(false),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('portal_users_email_key').on(table.email),
+    index('portal_users_role_idx').on(table.role, table.status),
+    index('portal_users_author_slug_idx').on(table.authorSlug),
+  ],
+)
+
+/* ------------------------------------------------------------------ Batches */
+
+export const BATCH_STATUSES = ['upcoming', 'active', 'completed', 'cancelled'] as const
+export type BatchStatus = (typeof BATCH_STATUSES)[number]
+
+export const batches = globifySite.table(
+  'batches',
+  {
+    id: rowId().primaryKey(),
+    /** `courses.id`. */
+    courseId: varchar('course_id', { length: 100 }).notNull(),
+    /**
+     * Denormalised from `courses` at write time.
+     *
+     * A student dashboard lists batches, and every list would otherwise join
+     * `courses` purely to print a title. More importantly it is a historical
+     * record: renaming a course in the admin must not retitle the certificate
+     * of someone who finished the old one.
+     */
+    courseSlug: varchar('course_slug', { length: 191 }).notNull(),
+    courseTitle: varchar('course_title', { length: 255 }).notNull(),
+    /** Human reference used in conversation, e.g. `FSD-2026-A`. */
+    code: varchar('code', { length: 64 }).notNull(),
+    name: varchar('name', { length: 191 }).notNull(),
+    /** `portal_users.id` of the instructor who leads it. */
+    instructorId: varchar('instructor_id', { length: 100 }).notNull(),
+    startDate: date('start_date', { mode: 'string' }).notNull(),
+    endDate: date('end_date', { mode: 'string' }),
+    /** Free text, e.g. "Mon & Wed, 6:00–8:00 pm". Timetables resist a schema. */
+    schedule: varchar('schedule', { length: 255 }),
+    mode: varchar('mode', { length: 64 }).notNull().default('On-campus'),
+    /** 0 means uncapped. */
+    capacity: integer('capacity').notNull().default(0),
+    /** Standing room link for online cohorts. */
+    meetingUrl: varchar('meeting_url', { length: 500 }),
+    status: varchar('status', { length: 16 }).$type<BatchStatus>().notNull().default('upcoming'),
+    notes: text('notes'),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('batches_code_key').on(table.code),
+    index('batches_instructor_idx').on(table.instructorId, table.status),
+    index('batches_course_idx').on(table.courseId),
+    index('batches_status_idx').on(table.status, table.startDate),
+  ],
+)
+
+/* -------------------------------------------------------------- Enrolments */
+
+export const ENROLLMENT_STATUSES = ['active', 'completed', 'dropped'] as const
+export type EnrollmentStatus = (typeof ENROLLMENT_STATUSES)[number]
+
+export const enrollments = globifySite.table(
+  'enrollments',
+  {
+    id: rowId().primaryKey(),
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    /** `portal_users.id`, always a row whose role is `student`. */
+    studentId: varchar('student_id', { length: 100 }).notNull(),
+    status: varchar('status', { length: 16 })
+      .$type<EnrollmentStatus>()
+      .notNull()
+      .default('active'),
+    enrolledAt: timestamp('enrolled_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Where the enrolment came from — `leads.id` when the admin converted an
+     * enquiry, null when the student was added directly.
+     */
+    leadId: varchar('lead_id', { length: 100 }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('enrollments_batch_student_key').on(table.batchId, table.studentId),
+    index('enrollments_student_idx').on(table.studentId, table.status),
+    index('enrollments_batch_idx').on(table.batchId, table.status),
+  ],
+)
+
+/**
+ * A student ticking off a curriculum module.
+ *
+ * The syllabus itself is `courses.curriculum` — a jsonb array — so progress is
+ * stored by position in that array rather than against a `modules` table that
+ * would have to be kept in step with it. `moduleTitle` is copied in so a row
+ * still reads correctly after the curriculum is edited, and `moduleIndex` is
+ * what the checklist matches on.
+ */
+export const moduleProgress = globifySite.table(
+  'module_progress',
+  {
+    id: rowId().primaryKey(),
+    enrollmentId: varchar('enrollment_id', { length: 100 }).notNull(),
+    moduleIndex: smallint('module_index').notNull(),
+    moduleTitle: varchar('module_title', { length: 255 }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    createdAt,
+  },
+  (table) => [
+    uniqueIndex('module_progress_enrollment_module_key').on(
+      table.enrollmentId,
+      table.moduleIndex,
+    ),
+  ],
+)
+
+/* --------------------------------------------------- Classes and attendance */
+
+export const CLASS_SESSION_STATUSES = ['scheduled', 'held', 'cancelled'] as const
+export type ClassSessionStatus = (typeof CLASS_SESSION_STATUSES)[number]
+
+export const classSessions = globifySite.table(
+  'class_sessions',
+  {
+    id: rowId().primaryKey(),
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    topic: text('topic'),
+    scheduledAt: timestamp('scheduled_at', { withTimezone: true, mode: 'date' }).notNull(),
+    durationMinutes: integer('duration_minutes').notNull().default(120),
+    meetingUrl: varchar('meeting_url', { length: 500 }),
+    recordingUrl: varchar('recording_url', { length: 500 }),
+    status: varchar('status', { length: 16 })
+      .$type<ClassSessionStatus>()
+      .notNull()
+      .default('scheduled'),
+    /** Set the first time attendance is saved — drives the "unmarked" list. */
+    attendanceMarkedAt: timestamp('attendance_marked_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('class_sessions_batch_idx').on(table.batchId, table.scheduledAt),
+    index('class_sessions_scheduled_idx').on(table.scheduledAt),
+  ],
+)
+
+export const ATTENDANCE_STATUSES = ['present', 'absent', 'late', 'excused'] as const
+export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number]
+
+export const attendance = globifySite.table(
+  'attendance',
+  {
+    id: rowId().primaryKey(),
+    sessionId: varchar('session_id', { length: 100 }).notNull(),
+    /** Carried alongside the session so a per-batch roll-up needs no join. */
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    studentId: varchar('student_id', { length: 100 }).notNull(),
+    status: varchar('status', { length: 16 }).$type<AttendanceStatus>().notNull(),
+    note: varchar('note', { length: 500 }),
+    /** `portal_users.id` of the instructor who marked it. */
+    markedById: varchar('marked_by_id', { length: 100 }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('attendance_session_student_key').on(table.sessionId, table.studentId),
+    index('attendance_student_idx').on(table.studentId, table.batchId),
+    index('attendance_batch_idx').on(table.batchId, table.status),
+  ],
+)
+
+/* ---------------------------------------------- Materials and announcements */
+
+export const MATERIAL_TYPES = ['link', 'file', 'video', 'note'] as const
+export type MaterialType = (typeof MATERIAL_TYPES)[number]
+
+export const materials = globifySite.table(
+  'materials',
+  {
+    id: rowId().primaryKey(),
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    description: text('description'),
+    type: varchar('type', { length: 16 }).$type<MaterialType>().notNull().default('link'),
+    url: varchar('url', { length: 500 }),
+    /** Body for `note` materials — the type that has no URL. */
+    body: text('body'),
+    /** Optional grouping onto a curriculum module, by index. */
+    moduleIndex: smallint('module_index'),
+    uploadedById: varchar('uploaded_by_id', { length: 100 }).notNull(),
+    sortOrder,
+    createdAt,
+    updatedAt,
+  },
+  (table) => [index('materials_batch_idx').on(table.batchId, table.sortOrder)],
+)
+
+export const announcements = globifySite.table(
+  'announcements',
+  {
+    id: rowId().primaryKey(),
+    /** Null means every batch the author teaches — a portal-wide notice. */
+    batchId: varchar('batch_id', { length: 100 }),
+    authorId: varchar('author_id', { length: 100 }).notNull(),
+    authorName: varchar('author_name', { length: 191 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    body: text('body').notNull(),
+    pinned: boolean('pinned').notNull().default(false),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('announcements_batch_idx').on(table.batchId, table.createdAt),
+    index('announcements_author_idx').on(table.authorId),
+  ],
+)
+
+/* ------------------------------------------------- Assignments and marking */
+
+export const assignments = globifySite.table(
+  'assignments',
+  {
+    id: rowId().primaryKey(),
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    brief: text('brief').notNull(),
+    /** Reference material the brief points at — a repo, a spec, a dataset. */
+    attachmentUrl: varchar('attachment_url', { length: 500 }),
+    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }).notNull(),
+    maxScore: integer('max_score').notNull().default(100),
+    /** Counts toward the final grade at this weight; 0 excludes it. */
+    weight: integer('weight').notNull().default(1),
+    allowLate: boolean('allow_late').notNull().default(true),
+    /** Null while it is a draft — students never see an unpublished row. */
+    publishedAt: timestamp('published_at', { withTimezone: true, mode: 'date' }),
+    createdById: varchar('created_by_id', { length: 100 }).notNull(),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('assignments_batch_idx').on(table.batchId, table.dueAt),
+    index('assignments_published_idx').on(table.publishedAt),
+  ],
+)
+
+export const SUBMISSION_STATUSES = ['submitted', 'graded', 'resubmit'] as const
+export type SubmissionStatus = (typeof SUBMISSION_STATUSES)[number]
+
+export const submissions = globifySite.table(
+  'submissions',
+  {
+    id: rowId().primaryKey(),
+    assignmentId: varchar('assignment_id', { length: 100 }).notNull(),
+    /** Denormalised so a student grade sheet is one query. */
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    studentId: varchar('student_id', { length: 100 }).notNull(),
+    /** What was handed in: a repository or deployment URL, and/or a note. */
+    url: varchar('url', { length: 500 }),
+    notes: text('notes'),
+    status: varchar('status', { length: 16 })
+      .$type<SubmissionStatus>()
+      .notNull()
+      .default('submitted'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    /**
+     * Recorded at submission time rather than compared on read: `due_at` can be
+     * extended after the fact, and a hand-in that *was* late should not
+     * silently become punctual because the deadline moved.
+     */
+    late: boolean('late').notNull().default(false),
+    score: integer('score'),
+    feedback: text('feedback'),
+    gradedById: varchar('graded_by_id', { length: 100 }),
+    gradedAt: timestamp('graded_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('submissions_assignment_student_key').on(table.assignmentId, table.studentId),
+    index('submissions_student_idx').on(table.studentId, table.batchId),
+    index('submissions_status_idx').on(table.batchId, table.status),
+  ],
+)
+
+/* ------------------------------------------------------------------ Quizzes */
+
+/**
+ * A single multiple-choice question.
+ *
+ * Stored as jsonb on the quiz rather than in a `questions` table: a quiz is
+ * always read and written whole, never queried question-by-question, and
+ * keeping it in one row means editing a quiz is one atomic write.
+ */
+export type QuizQuestion = {
+  id: string
+  prompt: string
+  options: string[]
+  /** Index into `options`. */
+  correctIndex: number
+  points: number
+}
+
+/** One answer in an attempt. `selectedIndex` is null when left blank. */
+export type QuizAnswer = { questionId: string; selectedIndex: number | null }
+
+export const quizzes = globifySite.table(
+  'quizzes',
+  {
+    id: rowId().primaryKey(),
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    description: text('description'),
+    questions: jsonb('questions').$type<QuizQuestion[]>().notNull(),
+    /** 0 means untimed. */
+    timeLimitMinutes: integer('time_limit_minutes').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(1),
+    /** Percentage needed to pass. */
+    passScore: integer('pass_score').notNull().default(60),
+    weight: integer('weight').notNull().default(1),
+    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }),
+    publishedAt: timestamp('published_at', { withTimezone: true, mode: 'date' }),
+    createdById: varchar('created_by_id', { length: 100 }).notNull(),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('quizzes_batch_idx').on(table.batchId, table.dueAt),
+    index('quizzes_published_idx').on(table.publishedAt),
+  ],
+)
+
+export const quizAttempts = globifySite.table(
+  'quiz_attempts',
+  {
+    id: rowId().primaryKey(),
+    quizId: varchar('quiz_id', { length: 100 }).notNull(),
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    studentId: varchar('student_id', { length: 100 }).notNull(),
+    /** 1-based, so `attempt_number = max_attempts` is the last one allowed. */
+    attemptNumber: smallint('attempt_number').notNull().default(1),
+    answers: jsonb('answers').$type<QuizAnswer[]>().notNull(),
+    score: integer('score').notNull().default(0),
+    maxScore: integer('max_score').notNull().default(0),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    submittedAt: timestamp('submitted_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('quiz_attempts_quiz_student_attempt_key').on(
+      table.quizId,
+      table.studentId,
+      table.attemptNumber,
+    ),
+    index('quiz_attempts_student_idx').on(table.studentId, table.batchId),
+  ],
+)
+
+/* ------------------------------------------------------------- Certificates */
+
+export const certificates = globifySite.table(
+  'certificates',
+  {
+    id: rowId().primaryKey(),
+    enrollmentId: varchar('enrollment_id', { length: 100 }).notNull(),
+    studentId: varchar('student_id', { length: 100 }).notNull(),
+    batchId: varchar('batch_id', { length: 100 }).notNull(),
+    /**
+     * Printed on the certificate and the only thing a verifier is given, so it
+     * must be unguessable as well as unique — a sequential number would let
+     * anyone enumerate every graduate at `/verify/GT-2026-0002`.
+     */
+    serial: varchar('serial', { length: 64 }).notNull(),
+    studentName: varchar('student_name', { length: 191 }).notNull(),
+    courseTitle: varchar('course_title', { length: 255 }).notNull(),
+    /** The computed grade at the moment of issue, frozen. */
+    finalScore: integer('final_score'),
+    grade: varchar('grade', { length: 16 }),
+    issuedAt: timestamp('issued_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    issuedById: varchar('issued_by_id', { length: 100 }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('certificates_serial_key').on(table.serial),
+    uniqueIndex('certificates_enrollment_key').on(table.enrollmentId),
+    index('certificates_student_idx').on(table.studentId),
+  ],
+)
+
+/* ---------------------------------------------------------------------------
+ * WhatsApp broadcasts
+ *
+ * A broadcast is a message the institute sends *first*, to many people at once
+ * — a new batch announcement, a fee deadline, a results day. That is a
+ * different thing from everything above it in this file, and the difference is
+ * imposed by Meta rather than chosen here:
+ *
+ *   · Inside the 24-hour customer service window (the person messaged us last)
+ *     any free-form text is allowed.
+ *   · Outside it, only a **pre-approved template** will be delivered. Free text
+ *     is rejected with error 131047 — per recipient, after the send was already
+ *     accepted — so a text broadcast to a cold list does not fail loudly, it
+ *     silently reaches nobody.
+ *
+ * Both shapes are modelled and `kind` says which one this is. The runner
+ * refuses to send free text to anyone outside the window rather than letting
+ * Meta reject it one number at a time.
+ *
+ * Recipients are materialised into their own table when the broadcast is
+ * composed, not re-derived from a filter at send time. Three reasons: the admin
+ * can see exactly who will be messaged before committing; a run interrupted
+ * half way resumes without messaging the first half twice; and a lead created
+ * during the send does not silently join a broadcast nobody reviewed.
+ * ------------------------------------------------------------------------ */
+
+export const BROADCAST_STATUSES = [
+  'draft',
+  'scheduled',
+  'sending',
+  'paused',
+  'completed',
+  'cancelled',
+] as const
+export type BroadcastStatus = (typeof BROADCAST_STATUSES)[number]
+
+/** `template` works at any time; `text` only inside the 24-hour window. */
+export const BROADCAST_KINDS = ['template', 'text'] as const
+export type BroadcastKind = (typeof BROADCAST_KINDS)[number]
+
+/** Where the recipient list was drawn from. Kept for the audit trail. */
+export const BROADCAST_SOURCES = ['leads', 'conversations', 'manual'] as const
+export type BroadcastSource = (typeof BROADCAST_SOURCES)[number]
+
+export type BroadcastAudience = {
+  source: BroadcastSource
+  /** `leads` only — narrows to one pipeline stage. */
+  leadStatus?: LeadStatus | null
+  /** `leads` only — narrows to one course. */
+  courseSlug?: string | null
+  /** Only people seen in the last N days. Null means no limit. */
+  sinceDays?: number | null
+  /** `manual` only — numbers pasted into the form, one per line. */
+  manual?: string[]
+}
+
+export const broadcasts = globifySite.table(
+  'broadcasts',
+  {
+    id: rowId().primaryKey(),
+    name: varchar('name', { length: 160 }).notNull(),
+    status: varchar('status', { length: 24 })
+      .$type<BroadcastStatus>()
+      .notNull()
+      .default('draft'),
+    kind: varchar('kind', { length: 16 }).$type<BroadcastKind>().notNull().default('template'),
+
+    /* --- Template sends ------------------------------------------------- */
+    /** The approved template's name in WhatsApp Manager, e.g. `new_batch_alert`. */
+    templateName: varchar('template_name', { length: 191 }),
+    /** Meta's locale code — `en`, `en_US`, `ur`. Must match the approved one. */
+    templateLanguage: varchar('template_language', { length: 16 }).default('en_US'),
+    /**
+     * Values for the template's positional `{{1}}`, `{{2}}` … placeholders, in
+     * order. Each may itself contain a merge token (`{name}`, `{course}`)
+     * resolved per recipient at send time.
+     */
+    templateVariables: jsonb('template_variables').$type<string[]>().notNull().default([]),
+    /** Fills a template whose header is an image. Must be a public https URL. */
+    headerImageUrl: varchar('header_image_url', { length: 500 }),
+    /**
+     * The single value a TEXT header may declare, kept out of
+     * `templateVariables` on purpose: Meta numbers header and body placeholders
+     * independently, both starting at `{{1}}`, so one shared array would put
+     * the body's first value in the header on every template that has both.
+     */
+    headerParameter: varchar('header_parameter', { length: 500 }),
+
+    /* --- Free-text sends ------------------------------------------------ */
+    /** The message for `kind = 'text'`; a copy of the approved body otherwise. */
+    body: text('body'),
+
+    audience: jsonb('audience').$type<BroadcastAudience>(),
+    /** Set when the admin schedules rather than sends; the cron route picks it up. */
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true, mode: 'date' }),
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    /** The failure that stopped the whole run, as opposed to one recipient's. */
+    lastError: text('last_error'),
+    createdBy: varchar('created_by', { length: 191 }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('broadcasts_status_idx').on(table.status),
+    index('broadcasts_created_at_idx').on(table.createdAt),
+    index('broadcasts_scheduled_for_idx').on(table.scheduledFor),
+  ],
+)
+
+/**
+ * `sending` is a claim, not a phase.
+ *
+ * A run is not one process: the admin's browser drives it while the tab is
+ * open, a cron sweep picks up whatever is left, and on a serverless host either
+ * can be replaced mid-flight. Two workers reading the same `queued` row is
+ * therefore the normal case, not an edge one, and it messages the same person
+ * twice.
+ *
+ * So a worker flips the row to `sending` inside the same statement that selects
+ * it (`FOR UPDATE SKIP LOCKED` — see `claimRecipients`), which no second worker
+ * can then see. A row still marked `sending` after the stale window is one
+ * whose worker died, and is returned to the queue rather than left stuck.
+ */
+export const BROADCAST_RECIPIENT_STATUSES = [
+  'queued',
+  'sending',
+  'sent',
+  'failed',
+  'skipped',
+] as const
+export type BroadcastRecipientStatus = (typeof BROADCAST_RECIPIENT_STATUSES)[number]
+
+/**
+ * What Meta later said happened to a message it had already accepted.
+ *
+ * `sent` is the acknowledgement from the API; everything after it arrives on
+ * the webhook, minutes or hours later. A message can be accepted and still
+ * reach nobody — an unregistered number fails long after the send returned
+ * 200 — which is why this is a separate column from `status` rather than two
+ * more values inside it.
+ */
+export const BROADCAST_DELIVERY_STATUSES = ['sent', 'delivered', 'read', 'failed'] as const
+export type BroadcastDeliveryStatus = (typeof BROADCAST_DELIVERY_STATUSES)[number]
+
+export const broadcastRecipients = globifySite.table(
+  'broadcast_recipients',
+  {
+    id: rowId().primaryKey(),
+    broadcastId: varchar('broadcast_id', { length: 100 }).notNull(),
+    /** E.164 digits, no `+` and no separators — the form Meta expects. */
+    phone: varchar('phone', { length: 32 }).notNull(),
+    /** Merge values, snapshotted so a lead edited mid-send cannot change them. */
+    name: varchar('name', { length: 191 }),
+    courseTitle: varchar('course_title', { length: 255 }),
+    leadId: varchar('lead_id', { length: 100 }),
+    status: varchar('status', { length: 16 })
+      .$type<BroadcastRecipientStatus>()
+      .notNull()
+      .default('queued'),
+    /** Bounded retry counter — see `MAX_ATTEMPTS` in `lib/whatsapp/runner.ts`. */
+    attempts: smallint('attempts').notNull().default(0),
+    /** Meta's `wamid`, and the key the status webhook comes back on. */
+    messageId: varchar('message_id', { length: 191 }),
+    deliveryStatus: varchar('delivery_status', { length: 16 }).$type<BroadcastDeliveryStatus>(),
+    error: text('error'),
+    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    /* One message per person per broadcast, enforced by the database rather
+       than by the code that builds the list. Deduplication in application code
+       is only as good as its last edit; this survives a second "rebuild
+       audience" click, a pasted number that was already pulled from leads, and
+       two admins composing at once. */
+    uniqueIndex('broadcast_recipients_broadcast_phone_key').on(table.broadcastId, table.phone),
+    index('broadcast_recipients_broadcast_status_idx').on(table.broadcastId, table.status),
+    index('broadcast_recipients_message_id_idx').on(table.messageId),
+  ],
+)
+
+/**
+ * Numbers that must never be broadcast to again.
+ *
+ * WhatsApp's Business Messaging Policy requires an opt-out to be honoured, and
+ * ignoring one is not a small thing: recipients block the number, the quality
+ * rating falls, and Meta throttles or bans the sender. So it is checked when a
+ * recipient list is built *and* again immediately before each send — the list
+ * for a scheduled broadcast can be hours old, and someone who says STOP in
+ * those hours has said it in time.
+ */
+export const whatsappOptOuts = globifySite.table(
+  'whatsapp_opt_outs',
+  {
+    id: rowId().primaryKey(),
+    phone: varchar('phone', { length: 32 }).notNull(),
+    /** The message that triggered it, or the admin's note. */
+    reason: varchar('reason', { length: 191 }),
+    /** `inbound-stop` when the person asked; `admin` when we heard another way. */
+    source: varchar('source', { length: 32 }).notNull().default('inbound-stop'),
+    createdAt,
+  },
+  (table) => [uniqueIndex('whatsapp_opt_outs_phone_key').on(table.phone)],
+)
+
+/* ---------------------------------------------------------------------------
  * Inferred row types — used across the data layer and admin server actions
  * ------------------------------------------------------------------------ */
 
@@ -720,3 +1400,27 @@ export type ConversationRow = typeof conversations.$inferSelect
 export type ConversationMessageRow = typeof conversationMessages.$inferSelect
 export type SubscriberRow = typeof newsletterSubscribers.$inferSelect
 export type AdminUserRow = typeof adminUsers.$inferSelect
+
+/* Learning portal. */
+export type PortalUserRow = typeof portalUsers.$inferSelect
+export type NewPortalUserRow = typeof portalUsers.$inferInsert
+export type BatchRow = typeof batches.$inferSelect
+export type NewBatchRow = typeof batches.$inferInsert
+export type EnrollmentRow = typeof enrollments.$inferSelect
+export type ModuleProgressRow = typeof moduleProgress.$inferSelect
+export type ClassSessionRow = typeof classSessions.$inferSelect
+export type NewClassSessionRow = typeof classSessions.$inferInsert
+export type AttendanceRow = typeof attendance.$inferSelect
+export type MaterialRow = typeof materials.$inferSelect
+export type NewMaterialRow = typeof materials.$inferInsert
+export type AnnouncementRow = typeof announcements.$inferSelect
+export type AssignmentRow = typeof assignments.$inferSelect
+export type NewAssignmentRow = typeof assignments.$inferInsert
+export type SubmissionRow = typeof submissions.$inferSelect
+export type QuizRow = typeof quizzes.$inferSelect
+export type NewQuizRow = typeof quizzes.$inferInsert
+export type QuizAttemptRow = typeof quizAttempts.$inferSelect
+export type CertificateRow = typeof certificates.$inferSelect
+export type BroadcastRow = typeof broadcasts.$inferSelect
+export type BroadcastRecipientRow = typeof broadcastRecipients.$inferSelect
+export type WhatsAppOptOutRow = typeof whatsappOptOuts.$inferSelect

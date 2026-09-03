@@ -37,11 +37,14 @@ import bcrypt from 'bcryptjs'
 import { config as loadEnv } from 'dotenv'
 import matter from 'gray-matter'
 
+import { inArray } from 'drizzle-orm'
+
 import { closeDb, getDb, isDatabaseConfigured } from './index'
 import {
   adminUsers,
   authors as authorsTable,
   benefits as benefitsTable,
+  portalUsers,
   campaignSettings,
   courseCategories as courseCategoriesTable,
   courses as coursesTable,
@@ -73,7 +76,7 @@ import {
   testimonials,
   trustBadges,
 } from '@/lib/content'
-import { courseCategories, courses } from '@/lib/courses'
+import { courseCategories, courses, retiredCourseSlugs } from '@/lib/courses'
 import {
   campaign,
   contactInfo,
@@ -114,7 +117,24 @@ async function seedCourses(db: ReturnType<typeof getDb>) {
         set: { badge: badge ?? null, sortOrder: index, updatedAt: new Date(), ...rest },
       })
   }
+  /* Withdrawn courses are DELETED, not merely left out of the loop above.
+   *
+   * That loop only ever inserts and updates, so a course dropped from
+   * `src/lib/courses.ts` would keep its row for ever — and the assistant reads
+   * the TABLE, not the file, so it would carry on listing and recommending a
+   * programme nobody teaches. Removing it from the catalogue source and
+   * expecting the bot to follow is the mistake this prevents.
+   *
+   * Only the slugs named in `retiredCourseSlugs` are removed. A blanket
+   * "delete anything not in the seed" would also delete a course somebody
+   * added through /admin/courses, which is a supported thing to do. */
+  const retired = await db
+    .delete(coursesTable)
+    .where(inArray(coursesTable.slug, [...retiredCourseSlugs]))
+    .returning({ slug: coursesTable.slug })
+
   step('courses', courses.length)
+  if (retired.length) step('courses retired', retired.length)
 }
 
 /* ------------------------------------------------------------------ authors */
@@ -579,6 +599,83 @@ async function seedAdminUser(db: ReturnType<typeof getDb>) {
   step('admin user', 1)
 }
 
+/* -------------------------------------------------------- portal accounts */
+
+/**
+ * An instructor login for every author who leads a course.
+ *
+ * The `authors` table already describes these people — it is what the public
+ * course page renders. What it cannot do is let them sign in, so this creates
+ * the matching `portal_users` row and links the two by slug.
+ *
+ * Only authors who actually lead a course get an account: `authors` doubles as
+ * the blog byline table, and a guest writer is not an instructor.
+ *
+ * Every account is created with `mustChangePassword`, so the shared seed value
+ * in `PORTAL_SEED_PASSWORD` can only ever be used once per person. Accounts
+ * that already exist are left completely alone — re-running the seed must not
+ * reset the password of someone who has been teaching for a term.
+ */
+async function seedInstructors(db: ReturnType<typeof getDb>) {
+  const password = process.env.PORTAL_SEED_PASSWORD
+
+  if (!password) {
+    console.warn(
+      '  ! instructor logins        skipped (set PORTAL_SEED_PASSWORD to create them)',
+    )
+    return
+  }
+
+  if (password.length < 12) {
+    throw new Error('PORTAL_SEED_PASSWORD must be at least 12 characters.')
+  }
+
+  const leadSlugs = new Set(courses.map((course) => course.instructorSlug))
+  const leads = authors.filter((author) => leadSlugs.has(author.slug))
+
+  if (leads.length === 0) {
+    console.warn('  ! instructor logins        skipped (no course leads found)')
+    return
+  }
+
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)
+
+  /* One query rather than one per author — and it is what makes the "leave
+     existing accounts alone" rule cheap to honour. */
+  const existing = new Set(
+    (await db.select({ email: portalUsers.email }).from(portalUsers)).map((row) => row.email),
+  )
+
+  let created = 0
+
+  for (const author of leads) {
+    const email = `${author.slug}@globifytech.com`.toLowerCase()
+    if (existing.has(email)) continue
+
+    await db.insert(portalUsers).values({
+      id: randomUUID(),
+      email,
+      name: author.name,
+      passwordHash,
+      role: 'instructor',
+      headline: author.role,
+      bio: author.bio,
+      authorSlug: author.slug,
+      mustChangePassword: true,
+    })
+
+    created += 1
+  }
+
+  step('instructor logins', created)
+
+  if (created > 0) {
+    console.info(
+      `    ↳ sign in at /portal/login with <author-slug>@globifytech.com and PORTAL_SEED_PASSWORD.`,
+    )
+  }
+}
+
 /* --------------------------------------------------------------------- run */
 
 async function main() {
@@ -606,6 +703,7 @@ async function main() {
   await seedNavLinks(db)
   await seedCampaign(db)
   await seedAdminUser(db)
+  await seedInstructors(db)
 
   console.info('\nDone. Nothing was deleted — re-run any time to refresh.\n')
 }

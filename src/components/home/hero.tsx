@@ -20,8 +20,20 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { getCampaign } from '@/lib/data/campaign'
 import { getCourseStats } from '@/lib/data/courses'
-import { courseCategories } from '@/lib/courses'
+import { activeCourseCategories } from '@/lib/courses'
 import { trustBadges } from '@/lib/content'
+
+/**
+ * "Learn A, B and C" — built rather than joined, because the catalogue can be
+ * one category deep. `slice(0, -1).join()` renders an empty string plus a
+ * dangling "and" the moment only one category has courses in it, which is a
+ * sentence nobody would ever notice until it shipped.
+ */
+const categoryPhrase = (() => {
+  const list = activeCourseCategories()
+  if (list.length > 1) return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
+  return list[0] ?? 'digital skills'
+})()
 
 const BADGE_ICONS: Record<string, LucideIcon> = {
   BadgeCheck,
@@ -100,10 +112,9 @@ export async function Hero() {
             </h1>
 
             <p className="mt-6 text-lg leading-relaxed text-white/72 sm:text-xl">
-              Learn {courseCategories.slice(0, -1).join(', ')} and{' '}
-              {courseCategories[courseCategories.length - 1]} through practical,
-              industry-focused programmes — {courseStats.total} courses, AI-powered curriculum,
-              real projects and career support.
+              Learn {categoryPhrase} through practical, industry-focused programmes —{' '}
+              {courseStats.total} courses, AI-powered curriculum, real projects and career
+              support.
             </p>
 
             {/* ------------------------------------------------------- CTAs */}

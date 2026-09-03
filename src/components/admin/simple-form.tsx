@@ -36,7 +36,20 @@ import type { UploadResult } from '@/lib/admin/image-upload'
 export type SimpleField<T extends FieldValues> = {
   name: Path<T>
   label: string
-  type?: 'text' | 'textarea' | 'number' | 'select' | 'checkbox' | 'email' | 'url' | 'date' | 'image'
+  type?:
+    | 'text'
+    | 'textarea'
+    | 'number'
+    | 'select'
+    | 'checkbox'
+    | 'email'
+    | 'url'
+    | 'date'
+    /* Classes and deadlines need a clock as well as a date. Falls through to
+       `TextField` like every other native input type. */
+    | 'datetime-local'
+    | 'password'
+    | 'image'
   required?: boolean
   hint?: string
   placeholder?: string
@@ -95,6 +108,7 @@ export function SimpleForm<T extends FieldValues>({
   cancelHref,
   submitLabel,
   successMessage,
+  successDescription = 'The public pages will regenerate on their next request.',
 }: {
   schema: ZodType<T>
   defaultValues: DefaultValues<T>
@@ -105,6 +119,12 @@ export function SimpleForm<T extends FieldValues>({
   cancelHref: string
   submitLabel: string
   successMessage: string
+  /**
+   * The line under the success toast. Defaults to the admin's regeneration
+   * note, which is true of content edits and false of everything in the
+   * portal — a student's mark does not rebuild a public page.
+   */
+  successDescription?: string
 }) {
   const router = useRouter()
 
@@ -127,9 +147,7 @@ export function SimpleForm<T extends FieldValues>({
       return
     }
 
-    toast.success(successMessage, {
-      description: 'The public pages will regenerate on their next request.',
-    })
+    toast.success(successMessage, { description: successDescription })
     router.push(cancelHref)
     router.refresh()
   })

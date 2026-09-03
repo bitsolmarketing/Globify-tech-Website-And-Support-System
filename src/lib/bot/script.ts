@@ -151,6 +151,34 @@ const MEDIA: Localised = {
 
 export const mediaAck = (language: BotLanguage) => pick(MEDIA, language)
 
+/**
+ * The model could not answer, so the menu answers instead.
+ *
+ * This is not an apology and does not mention a failure: the visitor did
+ * nothing wrong, and a bot that announces it is broken loses the lead. It
+ * offers the five things that always work.
+ */
+const FALLBACK: Localised = {
+  en: 'Let me make sure you get the right answer 🙏\n\nPick one of these, or ask me again in a few words.',
+  ur: 'میں چاہتا ہوں کہ آپ کو درست جواب ملے 🙏\n\nان میں سے کوئی منتخب کریں، یا مختصر الفاظ میں دوبارہ پوچھیں۔',
+  ur_roman:
+    'Main chahta hoon ke aap ko sahi jawab mile 🙏\n\nIn mein se koi chunein, ya chand alfaaz mein dobara poochein.',
+  pa: 'میں چاہنا واں کہ تہانوں ٹھیک جواب ملے 🙏\n\nایہناں وچوں کوئی چُنو، یا تھوڑے لفظاں وچ فیر پُچھو۔',
+}
+
+export const fallbackNotice = (language: BotLanguage) => pick(FALLBACK, language)
+
+/** Two rejected answers on one question, so the form is dropped rather than repeated. */
+const STUCK: Localised = {
+  en: "Sorry, I didn't catch that 🙏\n\nLet's start again — pick one of these, or just ask me anything.",
+  ur: 'معذرت، میں سمجھ نہیں سکا 🙏\n\nدوبارہ شروع کرتے ہیں — ان میں سے کوئی چنیں، یا کچھ بھی پوچھیں۔',
+  ur_roman:
+    "Maazrat, main samajh nahi saka 🙏\n\nDobara shuru karte hain — in mein se koi chunein, ya kuch bhi poochein.",
+  pa: 'معافی، میں سمجھ نئیں سکیا 🙏\n\nفیر توں شروع کریے — ایہناں وچوں کوئی چُنو، یا کجھ وی پُچھو۔',
+}
+
+export const stuckNotice = (language: BotLanguage) => pick(STUCK, language)
+
 const CANCELLED: Localised = {
   en: "No problem — cancelled. Ask me anything, or send *menu* to start over.",
   ur: 'کوئی بات نہیں — منسوخ کر دیا۔ کچھ بھی پوچھیں، یا *menu* لکھیں۔',
@@ -309,6 +337,11 @@ export interface CaptureState {
   step: number
   answers: Record<string, string>
   startedAt: string
+  /**
+   * Consecutive rejected answers on the CURRENT step. Reset the moment one is
+   * accepted, so it counts being stuck rather than counting the whole form.
+   */
+  attempts?: number
 }
 
 export interface Prompt {
@@ -319,7 +352,8 @@ export interface Prompt {
 export type CaptureOutcome =
   | { status: 'ask'; state: CaptureState; prompt: Prompt }
   | { status: 'complete'; flow: CaptureFlow; answers: Record<string, string> }
-  | { status: 'cancelled' }
+  /** `asked` — they typed cancel. `stuck` — we gave up re-asking. */
+  | { status: 'cancelled'; reason: 'asked' | 'stuck' }
 
 interface Step {
   key: string
@@ -334,6 +368,17 @@ interface Step {
 
 /** Abandoned captures expire rather than resuming days later. */
 const CAPTURE_TTL_MS = 6 * 60 * 60 * 1000
+
+/**
+ * How many times one question may be re-asked before the flow is abandoned.
+ *
+ * Re-asking forever is the loop people report as "it keeps failing": the
+ * validator rejects, the same question comes straight back, and there is no
+ * visible way out for anyone who does not know that typing *menu* escapes.
+ * Somebody who cannot get past a field on the second try will not get past it
+ * on the fifth, so the menu is offered instead.
+ */
+const MAX_ATTEMPTS = 2
 
 const NAME_ERROR: Localised = {
   en: 'Please send your full name so our team knows who they are speaking to.',
@@ -482,32 +527,44 @@ export function advanceCapture(
   if (!step) return { status: 'complete', flow: state.flow, answers: state.answers }
 
   const answer = raw.startsWith(OPTION_PREFIX) ? raw.slice(OPTION_PREFIX.length) : raw.trim()
-  if (CANCEL_WORDS.includes(answer.toLowerCase())) return { status: 'cancelled' }
+  if (CANCEL_WORDS.includes(answer.toLowerCase())) return { status: 'cancelled', reason: 'asked' }
 
   const skipped = Boolean(step.optional) && SKIP_WORDS.includes(answer.toLowerCase())
   let value = skipped ? '' : answer
 
   if (!skipped && step.clean) {
     const cleaned = step.clean(value)
-    if (cleaned == null) {
-      const prompt = render(step, language)
-      return {
-        status: 'ask',
-        state,
-        prompt: { ...prompt, text: `⚠️ ${pick(step.error ?? NAME_ERROR, language)}\n\n${prompt.text}` },
-      }
-    }
+    if (cleaned == null) return reject(state, step, language)
     value = cleaned
   }
 
-  if (!skipped && !value) return { status: 'ask', state, prompt: render(step, language) }
+  if (!skipped && !value) return reject(state, step, language)
 
   const next: CaptureState = {
     ...state,
     answers: { ...state.answers, [step.key]: value },
     step: state.step + 1,
+    // A fresh question starts on a clean slate — the count is per step, not
+    // per form, or one slow start would poison every question after it.
+    attempts: 0,
   }
   return askFrom(next, language, next.step)
+}
+
+/**
+ * The answer did not pass. Ask again with the reason on top — or, if this is
+ * the second failure on this step, give up on the form rather than loop.
+ */
+function reject(state: CaptureState, step: Step, language: BotLanguage): CaptureOutcome {
+  const attempts = (state.attempts ?? 0) + 1
+  if (attempts >= MAX_ATTEMPTS) return { status: 'cancelled', reason: 'stuck' }
+
+  const prompt = render(step, language)
+  return {
+    status: 'ask',
+    state: { ...state, attempts },
+    prompt: { ...prompt, text: `⚠️ ${pick(step.error ?? NAME_ERROR, language)}\n\n${prompt.text}` },
+  }
 }
 
 /** Find the next unanswered step, or report completion. */
@@ -550,6 +607,10 @@ export function asCaptureState(value: unknown): CaptureState | null {
     step: candidate.step,
     answers: (candidate.answers ?? {}) as Record<string, string>,
     startedAt: candidate.startedAt ?? new Date().toISOString(),
+    // Absent on a capture written before retries were bounded; those simply
+    // start counting from here.
+    attempts:
+      typeof candidate.attempts === 'number' && candidate.attempts > 0 ? candidate.attempts : 0,
   }
 }
 

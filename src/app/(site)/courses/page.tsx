@@ -142,7 +142,7 @@ export default async function CoursesPage() {
           breadcrumbSchema([{ name: 'Home', href: '/' }, ...CRUMBS]),
           courseListSchema(courses),
           faqSchema(courseFaqs),
-          campaignOfferSchema(campaign),
+          campaignOfferSchema(campaign, courses),
         )}
       />
     </>

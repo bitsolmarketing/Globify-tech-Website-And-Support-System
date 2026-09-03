@@ -8,7 +8,7 @@ import { CourseCard } from '@/components/courses/course-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/field'
-import { courseCategories, type Course, type CourseCategory } from '@/lib/courses'
+import { activeCourseCategories, type Course, type CourseCategory } from '@/lib/courses'
 import { cn } from '@/lib/utils'
 
 type Filter = 'All' | CourseCategory
@@ -41,8 +41,12 @@ export function CourseCatalogue({
    * the pills below remain the source of truth after that. */
   const initialCategory = searchParams.get('category')
   const [query, setQuery] = React.useState('')
+  /* Derived from the courses actually on the page, not from the allowed set:
+     a `?category=` pointing at a category the catalogue no longer stocks would
+     otherwise open on a filter that shows nothing. */
+  const available = React.useMemo(() => activeCourseCategories(courses), [courses])
   const [category, setCategory] = React.useState<Filter>(
-    courseCategories.includes(initialCategory as CourseCategory)
+    available.includes(initialCategory as CourseCategory)
       ? (initialCategory as Filter)
       : 'All',
   )
@@ -84,7 +88,7 @@ export function CourseCatalogue({
     return sorted
   }, [courses, query, category, sort])
 
-  const filters: Filter[] = ['All', ...courseCategories]
+  const filters: Filter[] = ['All', ...available]
 
   return (
     <div>

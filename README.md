@@ -63,8 +63,13 @@ npm run db:studio              # browse the database in Drizzle Studio
 | `/api/contact`, `/api/newsletter` | Dynamic | Validated, rate-limited endpoints that store submissions in MariaDB |
 | `/api/support/chat` | Dynamic | Streaming proxy to the AI assistant — pipes SSE straight through |
 | `/api/webhooks/meta`, `/webhook` | Dynamic | Signed Meta callback for WhatsApp, Messenger and Instagram |
+| `/verify/[serial]` | Dynamic | Public certificate check — name, course, date, grade, nothing else |
 | `not-found` | Static | Branded 404 with course suggestions |
 | `/admin/*` | Dynamic | Authenticated dashboard — noindex, middleware-gated, excluded from the sitemap |
+| `/portal/*` | Dynamic | Learning-portal sign-in, registration and role router — see "The learning portal" |
+| `/student/*` | Dynamic | Student LMS: courses, assignments, quizzes, attendance, grades, certificates |
+| `/instructor/*` | Dynamic | Instructor LMS: batches, roster, registers, marking, quiz results, certificates |
+| `/api/portal-auth/*` | Dynamic | The portal's own Auth.js instance — separate table and cookie from `/admin` |
 
 ### Content
 
@@ -429,7 +434,150 @@ ADMIN_EMAIL                             # read once by `npm run db:seed`
 ADMIN_PASSWORD                          # min 12 chars, bcrypt-hashed before storage
 ADMIN_NAME                              # optional, defaults to "Administrator"
 AUTH_URL                                # optional; only when the origin is not auto-detected
+
+# Learning portal — see "The learning portal" below
+# Nothing is required: the portal reuses AUTH_SECRET and DATABASE_URL above.
+PORTAL_SEED_PASSWORD                    # optional, seed only; creates instructor logins
 ```
+
+---
+
+## The learning portal
+
+An LMS for the people already inside the institute: `/student` for learners,
+`/instructor` for the people teaching them. It shares the database, the design
+system and the deployment with the marketing site, and shares nothing else with
+the admin.
+
+### The two sign-ins are genuinely separate
+
+`/admin` and `/portal` are two independent Auth.js instances.
+
+|                | `/admin`                    | `/portal`, `/student`, `/instructor`   |
+| -------------- | --------------------------- | -------------------------------------- |
+| Table          | `admin_users`               | `portal_users`                         |
+| Route          | `/api/auth/*`               | `/api/portal-auth/*`                   |
+| Cookie         | `authjs.session-token`      | `globify.portal-session`               |
+| Config         | `src/auth.config.ts`        | `src/portal-auth.config.ts`            |
+| Session length | 8 hours                     | 12 hours                               |
+
+They share `AUTH_SECRET` and are still cryptographically isolated, because
+Auth.js derives the JWT encryption key with HKDF salted by the **cookie name**.
+A portal token pasted into the admin cookie does not decrypt — it fails as a
+malformed token rather than being read as an admin session. That is the reason
+the portal cookie name is a fixed literal instead of Auth.js's default: a name
+that varied by environment would vary the key with it.
+
+`src/middleware.ts` runs both gates and dispatches on the path. The portal gate
+also enforces the role split, so a student requesting `/instructor/batches` is
+redirected before any page renders.
+
+### Roles
+
+- **Students** register themselves at `/portal/register`. Registering creates
+  an account, not an enrolment — a new student sees an empty dashboard until
+  the office puts them on a batch.
+- **Instructors** are created by an administrator at `/admin/portal-users/new`,
+  which generates a temporary password and displays it **once**. An account that
+  can mark work and issue certificates is not something anyone should be able to
+  grant themselves by filling in a form.
+
+Both land on `/portal` after signing in; that page reads the role and forwards
+them. An account still carrying a temporary password is diverted to
+`/portal/password` and can go nowhere else until it chooses its own.
+
+Suspending an account takes effect at the next page view, not the next sign-in:
+the portal layouts re-read the `portal_users` row on every request rather than
+trusting the twelve-hour JWT.
+
+### Courses, batches and enrolments
+
+`courses` describes what is *sold*. The LMS tables describe what is *taught*,
+and the join between them is `batches.course_id`.
+
+```
+courses ── batches ── enrollments ── portal_users (student)
+              │            └── module_progress
+              │            └── certificates
+              ├── class_sessions ── attendance
+              ├── assignments ── submissions
+              ├── quizzes ── quiz_attempts
+              ├── materials
+              └── announcements
+```
+
+A **batch** is one delivery of a course, to one group, on one timetable, by one
+instructor. Attendance, assignments and grades hang off the batch and never off
+the course, so two cohorts of the same syllabus keep separate records.
+
+`batches` stores `course_slug` and `course_title` alongside `course_id`. That
+denormalisation is deliberate: renaming a course in the admin must not retitle
+the certificate of someone who finished the old one.
+
+Batches and enrolments are managed at `/admin/batches` — they are commercial
+facts (who paid, what they bought), so they sit behind the admin login rather
+than the instructor's.
+
+### What each side can do
+
+**Students** see their courses with a tickable curriculum checklist, the class
+timetable, materials, announcements, their own attendance record, every
+assignment and quiz, a grade breakdown, and any certificates issued to them.
+
+**Instructors** see only the batches assigned to them: the roster with per-student
+progress, attendance and grade; a register per class; assignment creation and
+marking; a multiple-choice quiz builder with per-question analysis of how the
+cohort answered; materials; announcements; and certificate issue.
+
+### Grading
+
+The rules live in one place — `src/lib/portal/grading.ts` — as pure functions
+with no database access, so a student's view of a mark and an instructor's view
+of the same mark are computed by the same code.
+
+- Final score is **60% assignments, 40% quizzes**, renormalised when one side is
+  empty so a batch whose first quiz has not happened does not cap everyone at 60%.
+- **Unmarked work is skipped, not scored zero.** A student two days into a course
+  has submitted nothing; showing them 0% would be wrong as well as demoralising.
+- The **best** quiz attempt counts, not the latest — a student allowed three
+  attempts is being invited to improve.
+- **Attendance is reported but not blended into the mark.** Someone who attends
+  every class and submits nothing has not passed. Excused absences leave the
+  denominator rather than counting against the rate.
+- Quizzes are marked **server-side**. `correctIndex` never reaches the browser;
+  the page receives a `PublicQuestion` type that structurally cannot carry it.
+
+A certificate requires the curriculum complete, every submission marked, ≥50%
+overall and ≥70% attendance. Eligibility is re-checked against fresh data at the
+moment of issue, and the grade is then frozen onto the row — a certificate must
+not change retrospectively when a later mark is amended.
+
+Serials are random (`GT-2026-7K4M9QX2`), from an alphabet with no `0/O` or `1/I`
+so they survive being read aloud. Random rather than sequential because the
+serial is the only credential a verifier presents, and a counter would let
+anyone enumerate every graduate. Verification is public at `/verify/<serial>`
+and returns the name, course, date and grade — nothing adjacent to it.
+
+### Where authorisation actually lives
+
+Not in the pages. Every read in `src/lib/data/student.ts` takes the student id
+as a parameter, and every read and write in `src/lib/data/instructor.ts` routes
+through `getBatchForInstructor` before it touches a cohort. There is no function
+that returns a row and leaves the ownership check to its caller, because pages
+are the easiest place to forget one.
+
+Server actions re-authorise through `runPortalAction(role, …)`, which reads the
+session and hands back the caller — so the id an action passes to the data layer
+is always the signed-in one and never a form field. A wrong-owner id answers
+`notFound()`, so "not yours" and "does not exist" are indistinguishable from
+outside.
+
+### Seeding instructor logins
+
+`npm run db:seed` creates an instructor account for every author who leads a
+course when `PORTAL_SEED_PASSWORD` is set — `<author-slug>@globifytech.com`,
+flagged to force a password change on first sign-in. Accounts that already exist
+are never touched, so re-seeding cannot reset a working instructor's password.
 
 ---
 
@@ -606,9 +754,17 @@ credentials off a third-party CI provider.
    ```bash
    git remote set-url origin https://github.com/bitsolmarketing/Globify-tech-Website-And-Support-System.git
    ```
-2. **Create `.env.production.local`** there with the real `DATABASE_URL` (the
-   Supabase transaction pooler), `DIRECT_URL` (the session pooler, for
-   migrations), `AUTH_SECRET`, `NEXT_PUBLIC_SITE_URL` and the admin variables.
+2. **Create `.env.production.local`** there with the real `DATABASE_URL` and
+   `DIRECT_URL` — **both on the session pooler, port 5432** — plus
+   `AUTH_SECRET`, `AUTH_URL`, `NEXT_PUBLIC_SITE_URL`, `UPLOADS_DIR` and the
+   admin variables.
+
+   Not the transaction pooler (6543), despite it being the obvious choice for
+   a connection ceiling: it cannot survive a pooled connection being reused,
+   which is what produced the intermittent `/admin` 504s. `src/db/index.ts`
+   rewrites 6543 to 5432 at runtime so a wrong value is corrected rather than
+   fatal, but setting 5432 here makes that a no-op. The measurements are in
+   that file.
    It is git-ignored, so it lives only on the server. Substitute every
    placeholder — a templated `DB_HOST`-style value is rejected at startup by
    `describeDatabaseUrl()` precisely because it otherwise reads as "configured".

@@ -249,7 +249,45 @@ export function fit(title: string, max: number): string {
 interface SendResponse {
   messages?: { id?: string }[]
   message_id?: string
-  error?: { message?: string }
+  error?: {
+    message?: string
+    code?: number
+    error_subcode?: number
+    /** Where Meta puts the reason that actually says what to fix. */
+    error_data?: { details?: string }
+  }
+}
+
+/**
+ * What Meta's error codes mean in terms of something to change.
+ *
+ * A failed send is invisible from outside — the admin shows the assistant
+ * answering perfectly while the student sees nothing — so the log line is the
+ * only place the cause can surface. Meta's own `message` is usually a
+ * restatement of the code ("Invalid OAuth access token"), which is why the fix
+ * is spelled out here instead.
+ *
+ * 190 is the one that bites over and over: the token on the dashboard's API
+ * Setup tab expires every 24 hours, so a bot wired up with it works for a day,
+ * dies overnight, and comes back whenever somebody pastes a fresh one — which
+ * reads as the bot being flaky rather than the credential being temporary.
+ */
+const ERROR_HINTS: Record<number, string> = {
+  190: "the access token has expired or been revoked. The token on Meta > WhatsApp > API Setup is a 24-hour test token; a permanent one comes from Business Settings > System Users > Generate token, with whatsapp_business_messaging.",
+  100: "the request was rejected as malformed — most often a wrong WHATSAPP_PHONE_ID, or a field over Meta's length limit.",
+  131030: 'the recipient is not on the allowed list. While the app is in development mode, only numbers added under WhatsApp > API Setup can be messaged.',
+  131047: 'more than 24 hours have passed since this person last wrote, so a free-form reply is not allowed — only an approved template.',
+  131056: 'too many messages to this number too quickly; Meta is pacing this pair.',
+  132000: 'the message shape was rejected — usually a button title, list row title or body over the limit.',
+  133010: 'the phone number is not registered on the Cloud API.',
+}
+
+/** Meta's error, plus what to do about it, on one line. */
+function explain(error: SendResponse['error'], status: number): string {
+  const detail = error?.error_data?.details ?? error?.message ?? `Send API returned ${status}.`
+  const code = error?.code
+  const hint = code == null ? undefined : ERROR_HINTS[code]
+  return hint ? `${detail} (code ${code}) — ${hint}` : detail
 }
 
 async function post(
@@ -270,10 +308,7 @@ async function post(
     const json = (await response.json().catch(() => ({}))) as SendResponse
 
     if (!response.ok || json.error) {
-      return {
-        ok: false,
-        error: json.error?.message ?? `Send API returned ${response.status}.`,
-      }
+      return { ok: false, error: explain(json.error, response.status) }
     }
 
     return { ok: true, messageId: readId(json) }

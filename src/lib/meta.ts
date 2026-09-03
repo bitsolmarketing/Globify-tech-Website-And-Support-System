@@ -353,3 +353,76 @@ export function countWhatsAppMessages(body: MetaWebhookBody): number {
   }
   return count
 }
+
+/* -------------------------------------------------------- Delivery status -- */
+
+/**
+ * WhatsApp reports what became of a message it accepted, on the same webhook
+ * and in the same `changes` array as inbound messages — under `statuses`
+ * rather than `messages`.
+ *
+ * Nothing read these before broadcasts existed, because a bot answering a live
+ * conversation learns it was heard when the person replies. A broadcast has no
+ * reply: acceptance by the API is all it ever sees, and acceptance is not
+ * delivery. An unregistered number, a full device, a block — each of those
+ * fails here, minutes or hours after the send returned 200, and without this
+ * the report would show four hundred sent and nothing else, for ever.
+ */
+export type MetaDeliveryStatus = {
+  /** The `wamid` the send returned — the key the recipient row is found by. */
+  messageId: string
+  status: 'sent' | 'delivered' | 'read' | 'failed'
+  /** The recipient's WhatsApp id, for logging. */
+  recipientId?: string
+  /** Present on `failed`: why Meta could not deliver it. */
+  error?: string
+}
+
+type WhatsAppStatusValue = {
+  statuses?: {
+    id?: string
+    status?: string
+    recipient_id?: string
+    errors?: { code?: number; title?: string; message?: string; error_data?: { details?: string } }[]
+  }[]
+}
+
+const DELIVERY_STATUSES = new Set(['sent', 'delivered', 'read', 'failed'])
+
+export function normaliseWhatsAppStatuses(body: {
+  entry?: { changes?: { value?: Record<string, unknown> }[] }[]
+}): MetaDeliveryStatus[] {
+  const updates: MetaDeliveryStatus[] = []
+
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const value = change.value as WhatsAppStatusValue | undefined
+
+      for (const raw of value?.statuses ?? []) {
+        if (!raw?.id || !raw.status) continue
+
+        /* Meta has added status values before (`deleted`, `warning`) and will
+           again. An unrecognised one is dropped rather than stored, because a
+           delivery report that says "warning" against a name explains nothing
+           to the person reading it. */
+        if (!DELIVERY_STATUSES.has(raw.status)) continue
+
+        const failure = raw.errors?.[0]
+
+        updates.push({
+          messageId: raw.id,
+          status: raw.status as MetaDeliveryStatus['status'],
+          recipientId: raw.recipient_id,
+          error: failure
+            ? (failure.error_data?.details ??
+              failure.message ??
+              failure.title ??
+              `WhatsApp error ${failure.code ?? 'unknown'}`)
+            : undefined,
+        })
+      }
+    }
+  }
+
+  return updates
+}

@@ -88,49 +88,58 @@ const nextConfig = {
 
   experimental: {
     // Tree-shake barrel imports from icon/animation packages -> smaller JS payload.
-    optimizePackageImports: ['lucide-react', 'framer-motion'],
+    optimizePackageImports: ['lucide-react'],
   },
 
   // 301 redirects. Add legacy URLs here as the site evolves.
   async redirects() {
-    /* The catalogue was consolidated from 14 courses to 7. These keep the
-       retired URLs alive for inbound links and for the blog articles that
-       still reference them. Where no close equivalent exists the redirect
-       goes to the catalogue rather than to a misleading match.
+    /* Retired course URLs, kept alive for inbound links and for the blog
+       articles that still point at them.
 
-       The second group is a different lineage. globifytech.com has been serving
-       a build whose catalogue matches no commit in this repository, so the URLs
-       currently indexed by Google are not the ones above — they are these. The
-       first deploy of this repository retires all eight of them at once, and
-       without a redirect each becomes a 404 on a page that already has ranking
-       and inbound links. */
+       Only two survive as course-to-course redirects. The catalogue is three
+       marketing programmes now, and a redirect is a claim that the destination
+       is what the visitor was looking for — so anything without a genuine
+       successor goes to the catalogue below instead of to the nearest-sounding
+       name. */
     const retiredCourses = [
-      ['ai-and-automation', 'full-stack-development-with-ai'],
-      ['web-development', 'full-stack-development-with-ai'],
-      ['python-programming', 'full-stack-development-with-ai'],
-      ['wordpress-development', 'full-stack-development-with-ai'],
       ['digital-marketing', 'digital-media-marketing-with-ai'],
-      ['ui-ux-design', 'graphic-designing'],
-      ['canva-mastery', 'graphic-designing'],
-      ['amazon-virtual-assistant', 'tiktok-shop'],
-      ['shopify-dropshipping', 'tiktok-shop'],
-
-      // Live today, retired by the first deploy — near-identical renames.
       ['digital-marketing-with-ai', 'digital-media-marketing-with-ai'],
-      ['full-stack-web-development-with-ai', 'full-stack-development-with-ai'],
-      ['tiktok-shop-mastery', 'tiktok-shop'],
     ].map(([from, to]) => ({
       source: `/courses/${from}`,
       destination: `/courses/${to}`,
       permanent: true,
     }))
 
-    /* No successor close enough to name. "Agentic AI" and "AI Chatbots &
-       Business Automation" have no counterpart in the seven, and pointing them
-       at Facebook Automation because both say "automation" would land visitors
-       on a course about something else — worse than the catalogue, which at
-       least lets them choose. */
+    /* No successor close enough to name. Pointing "AI Chatbots & Business
+       Automation" at Facebook Automation because both say "automation" would
+       land visitors on a course about something else — worse than the
+       catalogue, which at least lets them choose. */
     const retiredToCatalogue = [
+      /* Withdrawn in 2026, when development, commerce and design came out of
+         the catalogue. Nothing among the three surviving marketing programmes
+         is a fair substitute for any of them, and `retiredCourseSlugs` in
+         src/lib/courses.ts is the same list — it drives the database prune. */
+      'full-stack-development-with-ai',
+      'tiktok-shop',
+      'graphic-designing',
+      'video-editing',
+
+      /* Older lineages whose successors have themselves now been withdrawn.
+         Repointed straight here rather than left chaining through a dead
+         course: two 301s to reach the same page splits the signal and costs
+         the visitor a round trip. */
+      'ai-and-automation',
+      'web-development',
+      'python-programming',
+      'wordpress-development',
+      'ui-ux-design',
+      'canva-mastery',
+      'amazon-virtual-assistant',
+      'shopify-dropshipping',
+      'full-stack-web-development-with-ai',
+      'tiktok-shop-mastery',
+
+      // Never had a counterpart in this repository's catalogue at all.
       'freelancing-mastery',
       'office-automation',
       'agentic-ai-and-workflow-management',
@@ -197,7 +206,65 @@ const nextConfig = {
   },
 
   async headers() {
+    /* Content-Security-Policy.
+     *
+     * The site was serving `upgrade-insecure-requests` and nothing else, which
+     * is a CSP header in name only — it forces https and permits everything
+     * else. The policy below adds the directives that actually stop something:
+     * `object-src 'none'` (no Flash/plugin injection), `base-uri 'self'` (no
+     * hijacking relative URLs by injecting a <base> tag), `form-action 'self'`
+     * (no exfiltrating a submitted contact form to another origin) and
+     * `frame-ancestors` (clickjacking, and it supersedes X-Frame-Options in
+     * every browser that reads both).
+     *
+     * `script-src` keeps 'unsafe-inline'. That is a deliberate trade, not an
+     * oversight: Next inlines its own bootstrap and streams RSC payloads in
+     * inline scripts, and the only way to allow those strictly is a per-request
+     * nonce. A nonce cannot be issued from `headers()` — it needs middleware on
+     * every route, and middleware makes every route dynamic. This site is
+     * statically prerendered and edge-cached on purpose (see the Cache-Control
+     * note below); trading that for a stricter script-src would cost far more
+     * than it buys. Revisit if the site ever goes dynamic anyway.
+     *
+     * Third-party origins are the analytics tags in `components/seo/analytics.tsx`
+     * (GTM, GA4, Clarity, Meta Pixel) plus the keyless Google Maps embed. Each
+     * is gated behind its own env var, so a deploy with none of them set simply
+     * never uses these allowances. */
+    /* Next's dev server compiles every chunk with webpack's `eval-source-map`
+       devtool and React Refresh evaluates its updates the same way, so a dev
+       bundle is hundreds of `eval()` calls. `script-src` without
+       'unsafe-eval' blocks all of them: the page server-renders correctly and
+       then fails to hydrate, which on /admin/login surfaces as the
+       "Sign-in could not load" boundary in `admin/(auth)/error.tsx` blaming
+       AUTH_SECRET, and everywhere else as a blank page. The relaxation is
+       scoped to `next dev` — the production bundle contains no `eval`, so
+       shipping it there would weaken the policy for nothing. */
+    const isDev = process.env.NODE_ENV !== 'production'
+    const devScriptSrc = isDev ? " 'unsafe-eval'" : ''
+    /* HMR runs over a websocket on the same origin. CSP 3 makes `'self'`
+       cover ws:/wss: for that origin, but not every browser in use has caught
+       up, so dev names it outright rather than depending on it. */
+    const devConnectSrc = isDev ? ' ws: wss:' : ''
+
+    const csp = [
+      "default-src 'self'",
+      `script-src 'self' 'unsafe-inline'${devScriptSrc} https://www.googletagmanager.com https://www.google-analytics.com https://www.clarity.ms https://connect.facebook.net`,
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      `connect-src 'self'${devConnectSrc} https://www.googletagmanager.com https://www.google-analytics.com https://*.google-analytics.com https://*.clarity.ms https://connect.facebook.net`,
+      "frame-src 'self' https://www.google.com https://www.googletagmanager.com",
+      "worker-src 'self' blob:",
+      "manifest-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'self'",
+      'upgrade-insecure-requests',
+    ].join('; ')
+
     const securityHeaders = [
+      { key: 'Content-Security-Policy', value: csp },
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

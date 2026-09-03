@@ -3,7 +3,7 @@ import { ArrowRight, Code2, type LucideIcon, Megaphone, Palette } from 'lucide-r
 
 import { Reveal, RevealGroup, RevealItem } from '@/components/shared/reveal'
 import { SectionHeading } from '@/components/shared/section-heading'
-import { courseCategories, courses, type CourseCategory } from '@/lib/courses'
+import { activeCourseCategories, courses, type CourseCategory } from '@/lib/courses'
 
 const CATEGORY_ICON: Record<CourseCategory, LucideIcon> = {
   'AI & Development': Code2,
@@ -36,7 +36,7 @@ export function CareerPaths() {
         </Reveal>
 
         <RevealGroup as="ul" className="mt-12 grid gap-6 lg:mt-16 lg:grid-cols-3" stagger={0.08}>
-          {courseCategories.map((category) => {
+          {activeCourseCategories().map((category) => {
             const Icon = CATEGORY_ICON[category]
             const count = courses.filter((c) => c.category === category).length
             return (

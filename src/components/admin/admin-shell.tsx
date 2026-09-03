@@ -6,10 +6,13 @@ import { usePathname } from 'next/navigation'
 import {
   BookOpen,
   CalendarClock,
+  GraduationCap,
+  IdCard,
   Images,
   LayoutDashboard,
   LogOut,
   Mail,
+  Megaphone,
   Menu,
   MessageSquareQuote,
   Newspaper,
@@ -35,6 +38,23 @@ const NAV: { heading: string; items: NavItem[] }[] = [
     items: [
       { href: '/admin/leads', label: 'Leads', icon: Users },
       { href: '/admin/subscribers', label: 'Subscribers', icon: Mail },
+    ],
+  },
+  {
+    /* Its own group rather than an item under Enquiries. Everything there is
+       inbound and safe to browse; this one sends, to hundreds of people, and
+       putting it a click away from "Leads" is how it gets opened by accident. */
+    heading: 'Outbound',
+    items: [{ href: '/admin/broadcasts', label: 'WhatsApp broadcasts', icon: Megaphone }],
+  },
+  {
+    /* The LMS. Separate from Content because these rows are about people and
+       delivery — who is enrolled, who teaches — not about what the marketing
+       site publishes. */
+    heading: 'Learning portal',
+    items: [
+      { href: '/admin/batches', label: 'Batches', icon: GraduationCap },
+      { href: '/admin/portal-users', label: 'Portal accounts', icon: IdCard },
     ],
   },
   {

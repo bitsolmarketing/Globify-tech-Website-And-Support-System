@@ -5,6 +5,15 @@ import { absoluteUrl } from './utils'
 
 type PageMetaInput = {
   title: string
+  /**
+   * Opt out of the root layout's `%s | Globify Tech Institute` template.
+   *
+   * The template costs 25 characters, which is affordable on a course page
+   * ("Video Editing…" + suffix still fits) but not on a page whose own title
+   * already carries the brand. Set this when `title` is the complete, final
+   * string — it is emitted verbatim.
+   */
+  absoluteTitle?: boolean
   description: string
   /** Site-relative path, e.g. "/courses/web-development". */
   path: string
@@ -27,6 +36,7 @@ type PageMetaInput = {
  */
 export function buildMetadata({
   title,
+  absoluteTitle = false,
   description,
   path,
   image,
@@ -48,7 +58,7 @@ export function buildMetadata({
     : absoluteUrl(`/api/og?title=${encodeURIComponent(title)}`)
 
   return {
-    title,
+    title: absoluteTitle ? { absolute: title } : title,
     description,
     keywords: keywords?.length ? keywords : [...siteConfig.keywords],
     alternates: {

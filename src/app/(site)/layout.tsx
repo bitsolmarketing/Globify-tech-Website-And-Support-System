@@ -5,7 +5,6 @@ import { Footer } from '@/components/layout/footer'
 import { Navbar } from '@/components/layout/navbar'
 import { StickyCta } from '@/components/layout/sticky-cta'
 import { WhatsAppButton } from '@/components/layout/whatsapp-button'
-import { MotionProvider } from '@/components/shared/motion-provider'
 import { getCampaign } from '@/lib/data/campaign'
 import { graph, localBusinessSchema, organizationSchema, websiteSchema } from '@/lib/schema'
 
@@ -30,16 +29,17 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
         Skip to main content
       </a>
 
-      <MotionProvider>
-        <Navbar campaign={campaign} />
-        <main id="main-content" className="min-h-[60vh]">
-          {children}
-        </main>
-        <Footer campaign={campaign} />
-        <StickyCta campaign={campaign} />
-        <WhatsAppButton campaign={campaign} />
-        <BackToTop />
-      </MotionProvider>
+      {/* No motion provider: scroll reveals are CSS scroll-driven animations
+          now (see the SCROLL REVEAL block in globals.css), so there is no
+          animation runtime to wrap the tree in. */}
+      <Navbar campaign={campaign} />
+      <main id="main-content" className="min-h-[60vh]">
+        {children}
+      </main>
+      <Footer campaign={campaign} />
+      <StickyCta campaign={campaign} />
+      <WhatsAppButton campaign={campaign} />
+      <BackToTop />
 
       <JsonLd
         id="site-schema"

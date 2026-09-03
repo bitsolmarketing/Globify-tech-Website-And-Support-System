@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
-import { LEAD_STATUSES } from '@/db/schema'
+import { BROADCAST_KINDS, BROADCAST_SOURCES, LEAD_STATUSES } from '@/db/schema'
+import { parsePhoneList } from '@/lib/whatsapp/format'
 import { courseCategories, type Course } from '@/lib/courses'
 
 /**
@@ -399,3 +400,147 @@ export const campaignFormSchema = z.object({
 export type CampaignFormValues = z.infer<typeof campaignFormSchema>
 
 export const leadStatusSchema = z.enum(LEAD_STATUSES)
+
+/* ---------------------------------------------------------------------------
+ * WhatsApp broadcasts
+ *
+ * One schema for the compose form and the server action that saves it, in the
+ * same arrangement as everything above. Every field is a string because that is
+ * what an `<input>` produces; `toBroadcastInput` is the single place they are
+ * parsed into the shapes the database column expects, so the browser's idea of
+ * "three variables" and the server's cannot diverge.
+ * ------------------------------------------------------------------------ */
+
+export const broadcastFormSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(3, 'Give the broadcast a name you will recognise later')
+      .max(160),
+    kind: z.enum(BROADCAST_KINDS, {
+      errorMap: () => ({ message: 'Choose a template or a free-text message' }),
+    }),
+
+    /* --- Template --------------------------------------------------------- */
+    templateName: z.string().trim().max(191),
+    templateLanguage: z.string().trim().max(16),
+    /** One value per line, for `{{1}}`, `{{2}}` … in order. */
+    templateVariables: z.string(),
+    headerParameter: z.string().trim().max(500),
+    headerImageUrl: z.union([
+      z
+        .string()
+        .trim()
+        .url('Enter a full https:// image URL')
+        /* Meta fetches this itself, from its own servers. An http URL, or one
+           behind the admin login, resolves for the person composing and fails
+           for Meta — which surfaces as every message failing at once with a
+           header error that never mentions the URL. */
+        .startsWith('https://', 'The image URL must start with https://'),
+      z.literal(''),
+    ]),
+
+    /* --- Free text -------------------------------------------------------- */
+    body: z.string().trim().max(4096, 'WhatsApp messages are capped at 4096 characters'),
+
+    /* --- Audience --------------------------------------------------------- */
+    source: z.enum(BROADCAST_SOURCES, {
+      errorMap: () => ({ message: 'Choose where the recipients come from' }),
+    }),
+    /** Blank means "any". */
+    leadStatus: z.union([leadStatusSchema, z.literal('')]),
+    courseSlug: z.string().trim().max(191),
+    sinceDays: z.union([
+      z.coerce.number().int().min(1, 'Use at least 1 day').max(3650),
+      z.literal(''),
+    ]),
+    manual: z.string(),
+
+    /* --- Schedule --------------------------------------------------------- */
+    /** `datetime-local` value, or blank to send manually. */
+    scheduledFor: z.string().trim(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.kind === 'template') {
+      if (!values.templateName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['templateName'],
+          message: 'Choose an approved template',
+        })
+      }
+      if (!values.templateLanguage) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['templateLanguage'],
+          message: 'A template is identified by its name AND its language',
+        })
+      }
+    }
+
+    if (values.kind === 'text' && values.body.length < 5) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['body'],
+        message: 'Write the message you want to send',
+      })
+    }
+
+    /* Checked with the same parser the runner queues from, so "12 numbers
+       accepted" in the form is 12 rows in the database and not 9. */
+    if (values.source === 'manual' && parsePhoneList(values.manual).valid.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['manual'],
+        message: 'Paste at least one valid phone number, one per line',
+      })
+    }
+
+    if (values.scheduledFor) {
+      const when = new Date(values.scheduledFor)
+      if (Number.isNaN(when.getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['scheduledFor'],
+          message: 'That is not a valid date and time',
+        })
+      } else if (when.getTime() < Date.now() - 60_000) {
+        /* A minute of slack: the clock moves between rendering the form and
+           submitting it, and refusing "now" as historic is maddening. */
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['scheduledFor'],
+          message: 'Schedule it for a time in the future, or leave it blank to send by hand',
+        })
+      }
+    }
+  })
+
+export type BroadcastFormValues = z.infer<typeof broadcastFormSchema>
+
+/** The stored shape, derived once so the form and the action agree on it. */
+export function toBroadcastInput(values: BroadcastFormValues) {
+  const template = values.kind === 'template'
+
+  return {
+    name: values.name,
+    kind: values.kind,
+    templateName: template ? values.templateName : null,
+    templateLanguage: template ? values.templateLanguage || 'en_US' : null,
+    templateVariables: template ? toLines(values.templateVariables) : [],
+    headerParameter: template ? values.headerParameter || null : null,
+    headerImageUrl: template ? values.headerImageUrl || null : null,
+    body: values.kind === 'text' ? values.body : null,
+    audience: {
+      source: values.source,
+      leadStatus: values.leadStatus || null,
+      courseSlug: values.courseSlug || null,
+      sinceDays: values.sinceDays === '' ? null : values.sinceDays,
+      /* Normalised and de-duplicated on the way in, so the stored filter is
+         what will actually be messaged rather than the raw paste. */
+      manual: values.source === 'manual' ? parsePhoneList(values.manual).valid : [],
+    },
+    scheduledFor: values.scheduledFor ? new Date(values.scheduledFor) : null,
+  }
+}

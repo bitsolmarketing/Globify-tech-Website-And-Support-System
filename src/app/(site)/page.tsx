@@ -17,7 +17,7 @@ import { WhyGlobify } from '@/components/home/why-globify'
 import { JsonLd } from '@/components/seo/json-ld'
 import { getCampaign } from '@/lib/data/campaign'
 import { getHomepageFaqs } from '@/lib/data/content'
-import { getFeaturedCourses } from '@/lib/data/courses'
+import { getCourses, getFeaturedCourses } from '@/lib/data/courses'
 import { buildMetadata } from '@/lib/metadata'
 import {
   campaignOfferSchema,
@@ -28,17 +28,28 @@ import {
 } from '@/lib/schema'
 import { siteConfig } from '@/lib/site'
 
+/*
+ * Written to fit a SERP rather than to say everything.
+ *
+ * The previous title ran to 112 characters once the brand template was applied
+ * and the description to 242 — both truncated, and the truncation fell on the
+ * tagline, which is the least useful part to a searcher. This leads with the
+ * subjects people actually search for, keeps "Faisalabad" for local intent,
+ * and carries the brand itself, so it opts out of the template.
+ */
 export const metadata: Metadata = buildMetadata({
-  title: `${siteConfig.tagline} — AI, Marketing, Design & Development Courses in Faisalabad`,
-  description: siteConfig.description,
+  title: 'AI, Marketing & Development Courses in Faisalabad | Globify Tech',
+  absoluteTitle: true,
+  description: siteConfig.metaDescription,
   path: '/',
   keywords: [...siteConfig.keywords],
 })
 
 export default async function HomePage() {
-  const [homepageFaqs, featuredCourses, campaign] = await Promise.all([
+  const [homepageFaqs, featuredCourses, allCourses, campaign] = await Promise.all([
     getHomepageFaqs(),
     getFeaturedCourses(6),
+    getCourses(),
     getCampaign(),
   ])
 
@@ -64,12 +75,16 @@ export default async function HomePage() {
         data={graph(
           webPageSchema({
             title: `${siteConfig.name} — ${siteConfig.tagline}`,
+            // JSON-LD is not truncated, so the long form earns its keep here.
             description: siteConfig.description,
             path: '/',
           }),
           courseListSchema(featuredCourses),
           faqSchema(homepageFaqs),
-          campaignOfferSchema(campaign),
+          /* The whole catalogue, not just the featured six: the offer claims
+             "every professional course", so the price range it aggregates has
+             to span every course or the markup contradicts its own copy. */
+          campaignOfferSchema(campaign, allCourses),
         )}
       />
     </>

@@ -264,13 +264,10 @@ function logoArt(size = 512) {
 /* ------------------------------------------------------------------ Runner */
 
 const COURSE_SLUGS = [
-  'full-stack-development-with-ai',
   'digital-media-marketing-with-ai',
   'social-media-marketing-with-ai',
-  'tiktok-shop',
   'facebook-automation-and-monetization',
-  'graphic-designing',
-  'video-editing',
+  'content-creation',
 ]
 
 /* Filenames match the `image:` frontmatter in content/blog/*.mdx, which was
@@ -297,6 +294,7 @@ const AUTHOR_SLUGS = [
   'hassan-mehmood',
   'zainab-khan',
   'bilal-ahmed',
+  'muhammad-adnan-bashir',
 ]
 
 async function ensureDir(dir) {
