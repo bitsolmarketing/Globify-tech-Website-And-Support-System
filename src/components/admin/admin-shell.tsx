@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 import {
   BookOpen,
   CalendarClock,
+  CreditCard,
+  GraduationCap,
   Images,
   LayoutDashboard,
   LogOut,
@@ -14,6 +16,7 @@ import {
   MessageSquareQuote,
   Newspaper,
   PanelLeftClose,
+  UserRound,
   Users,
   UsersRound,
   X,
@@ -35,6 +38,17 @@ const NAV: { heading: string; items: NavItem[] }[] = [
     items: [
       { href: '/admin/leads', label: 'Leads', icon: Users },
       { href: '/admin/subscribers', label: 'Subscribers', icon: Mail },
+    ],
+  },
+  {
+    /* Ordered by how often it is opened, not by the data model: the payment
+       review queue is a daily job, the student list is a lookup, and plans
+       change a few times a year. */
+    heading: 'Enrollments',
+    items: [
+      { href: '/admin/enrollments', label: 'Enrollments', icon: GraduationCap },
+      { href: '/admin/students', label: 'Students', icon: UserRound },
+      { href: '/admin/plans', label: 'Plans', icon: CreditCard },
     ],
   },
   {

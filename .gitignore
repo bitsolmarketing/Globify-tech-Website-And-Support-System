@@ -58,3 +58,8 @@ yarn-error.log*
 # Written by the deploy-confirm workflow step; also appears here if that step
 # is ever run by hand in the checkout.
 /configured.json
+
+# Payment receipts — students' bank screenshots. Stored outside public/ so they
+# are never served statically; see src/lib/receipts.ts. On the server set
+# RECEIPTS_DIR to a path outside the deploy checkout so they survive a deploy.
+.private/

@@ -232,6 +232,7 @@ export const mainNav: NavItem[] = [
       },
     },
   },
+  { label: 'Pricing', href: '/pricing' },
   { label: 'Why Us', href: '/why-choose-us' },
   { label: 'Student Success', href: '/success-stories' },
   { label: 'Campus', href: '/gallery' },

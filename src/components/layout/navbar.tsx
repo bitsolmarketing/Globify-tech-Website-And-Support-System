@@ -7,6 +7,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import {
   ArrowRight,
   ChevronDown,
+  LogIn,
   Menu,
   Phone,
   Sparkles,
@@ -140,6 +141,23 @@ export function Navbar({ campaign }: { campaign: Campaign }) {
               <span className="hidden 2xl:inline">{contactInfo.phone}</span>
               <span className="2xl:hidden">Call</span>
             </a>
+
+            {/*
+              Always "Sign in", never "Your dashboard".
+
+              Knowing which to show means reading the session, and the session
+              lives in a cookie — one `auth()` call in the site layout would
+              turn all 80 statically pre-rendered marketing pages dynamic, for a
+              word. `/login` redirects an authenticated student straight to
+              their dashboard instead, so the destination is right even though
+              the label cannot be.
+            */}
+            <Button asChild variant="ghost" size="md" className="hidden lg:inline-flex">
+              <Link href="/login">
+                <LogIn aria-hidden />
+                Sign in
+              </Link>
+            </Button>
 
             <Button asChild variant="gold" size="md" className="hidden sm:inline-flex">
               <Link href="/contact#enroll">
@@ -413,6 +431,16 @@ function MobileMenu({
               {contactInfo.phone}
             </a>
           </Button>
+          {/* The desktop bar hides its sign-in link below `lg`, so without this
+              the entire account area would be unreachable on a phone. */}
+          <Dialog.Close asChild>
+            <Button asChild variant="ghost" size="lg">
+              <Link href="/login">
+                <LogIn aria-hidden />
+                Sign in to your account
+              </Link>
+            </Button>
+          </Dialog.Close>
         </div>
       </Dialog.Content>
     </Dialog.Portal>

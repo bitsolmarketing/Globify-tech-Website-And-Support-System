@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { LEAD_STATUSES } from '@/db/schema'
 import { courseCategories, type Course } from '@/lib/courses'
+import { PLAN_INTERVALS } from '@/lib/plans'
 
 /**
  * Zod schemas shared by the admin forms (react-hook-form resolver) and the
@@ -399,3 +400,52 @@ export const campaignFormSchema = z.object({
 export type CampaignFormValues = z.infer<typeof campaignFormSchema>
 
 export const leadStatusSchema = z.enum(LEAD_STATUSES)
+
+/* ---------------------------------------------------------------------------
+ * Plans
+ * ------------------------------------------------------------------------ */
+
+export const planFormSchema = z
+  .object({
+    slug: slugField,
+    name: z.string().trim().min(2, 'Name is required').max(80),
+    tagline: z.string().trim().min(10, 'Tagline is required').max(160),
+    description: z.string().trim().min(20, 'Description is required').max(1000),
+    /**
+     * Rupees, whole. A plan priced in paisa would be rendered by `formatPKR`
+     * as a rounded figure that does not match what is charged, so fractions
+     * are rejected here rather than quietly lost at display time.
+     */
+    price: z.coerce.number().int('Enter a whole number of rupees').min(1).max(10_000_000),
+    /** Blank means "no strike-through" — not zero, which would render as one. */
+    compareAtPrice: z.union([
+      z.coerce.number().int().min(0).max(10_000_000),
+      z.literal(''),
+    ]),
+    interval: z.enum(PLAN_INTERVALS),
+    features: lineList(1, 'feature'),
+    badge: z.string().trim().max(40),
+    featured: z.boolean(),
+    active: z.boolean(),
+  })
+  .refine(
+    (values) => values.compareAtPrice === '' || Number(values.compareAtPrice) > values.price,
+    {
+      message: 'The compare-at price must be higher than the price, or left blank',
+      path: ['compareAtPrice'],
+    },
+  )
+
+export type PlanFormValues = z.infer<typeof planFormSchema>
+
+/** Form values → the columns `plans` actually stores. */
+export function toPlanInput(values: PlanFormValues) {
+  const { features, badge, compareAtPrice, ...rest } = values
+
+  return {
+    ...rest,
+    features: toLines(features),
+    badge: badge.trim() || null,
+    compareAtPrice: compareAtPrice === '' ? null : Number(compareAtPrice),
+  }
+}

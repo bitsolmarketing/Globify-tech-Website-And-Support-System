@@ -8,11 +8,17 @@ import { auth } from '@/auth'
  * Middleware protects the `/admin` *pages*, but a server action is a POST to
  * its own endpoint and is reachable regardless of which page the caller was
  * on — so authorisation has to be re-checked here, not inherited.
+ *
+ * The role check is not redundant with the id check. Once students could sign
+ * in, "has a session" stopped meaning "is staff": a logged-in student holds a
+ * perfectly valid session with a perfectly real `user.id`, and every admin
+ * action in the app is one unauthenticated-looking POST away from anyone who
+ * registered on the public site. This is the line that says no.
  */
 export async function requireAdmin(): Promise<{ id: string; email: string }> {
   const session = await auth()
 
-  if (!session?.user?.id) {
+  if (!session?.user?.id || session.user.role !== 'admin') {
     throw new Error('Not authorised. Please sign in again.')
   }
 

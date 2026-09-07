@@ -168,14 +168,26 @@ export default async function CourseDetailPage({ params }: { params: Promise<Par
               You save {formatPKR(saved)} · code {campaign.couponCode}
             </p>
 
+            {/*
+              Three ways in, kept deliberately distinct rather than collapsed.
+
+              "Enroll now" is the new self-serve path: an account, a seat, and a
+              fee to pay. The enquiry form further down the page is the old one
+              and stays the primary route for most people here — the institute's
+              real funnel is a counsellor on WhatsApp, and forcing a signup on
+              someone who has not decided yet would lose the lead outright.
+            */}
             <div className="mt-6 grid gap-2.5">
               <Button asChild variant="gold" size="lg">
-                <Link href="#enroll">
+                <Link href={`/checkout/course/${course.slug}`}>
                   Enroll Now
                   <ArrowRight aria-hidden />
                 </Link>
               </Button>
               <Button asChild variant="outline-light" size="lg">
+                <Link href="#enroll">Request a callback</Link>
+              </Button>
+              <Button asChild variant="ghost-light" size="lg">
                 <a
                   href={`https://wa.me/${contactInfo.whatsapp}?text=${encodeURIComponent(
                     `Assalam o Alaikum! I want details about the ${course.title} course with the ${campaign.discountPercent}% discount.`,

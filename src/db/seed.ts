@@ -50,6 +50,7 @@ import {
   galleryItems as galleryTable,
   milestones as milestonesTable,
   navLinks as navLinksTable,
+  plans as plansTable,
   posts as postsTable,
   siteSettings as siteSettingsTable,
   socialLinks as socialLinksTable,
@@ -74,6 +75,7 @@ import {
   trustBadges,
 } from '@/lib/content'
 import { courseCategories, courses } from '@/lib/courses'
+import { plans } from '@/lib/plans'
 import {
   campaign,
   contactInfo,
@@ -115,6 +117,41 @@ async function seedCourses(db: ReturnType<typeof getDb>) {
       })
   }
   step('courses', courses.length)
+}
+
+/* -------------------------------------------------------------------- plans */
+
+/**
+ * All-access plans.
+ *
+ * `onConflictDoUpdate` on `price` deserves a note, because it is the one place
+ * a re-seed can undo somebody's work: an admin who retunes the price at
+ * /admin/plans will have it overwritten by the next `npm run db:seed`. That is
+ * the same bargain every other table here makes — the seed is the declared
+ * state of the content — but it matters more for a number that is charged to
+ * people, so the prices in `@/lib/plans` should be corrected there once the
+ * institute settles on them, not only in the admin.
+ */
+async function seedPlans(db: ReturnType<typeof getDb>) {
+  for (const [index, plan] of plans.entries()) {
+    const { slug, badge, compareAtPrice, ...rest } = plan
+
+    const values = {
+      badge: badge ?? null,
+      compareAtPrice: compareAtPrice ?? null,
+      sortOrder: index,
+      ...rest,
+    }
+
+    await db
+      .insert(plansTable)
+      .values({ id: randomUUID(), slug, ...values })
+      .onConflictDoUpdate({
+        target: plansTable.slug,
+        set: { updatedAt: new Date(), ...values },
+      })
+  }
+  step('plans', plans.length)
 }
 
 /* ------------------------------------------------------------------ authors */
@@ -590,6 +627,7 @@ async function main() {
   console.info('\nSeeding Globify content into Postgres…\n')
 
   await seedCourses(db)
+  await seedPlans(db)
   await seedAuthors(db)
   await seedPosts(db)
   await seedTestimonials(db)

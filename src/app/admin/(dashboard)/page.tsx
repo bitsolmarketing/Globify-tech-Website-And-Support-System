@@ -4,10 +4,12 @@ import {
   ArrowRight,
   BookOpen,
   CalendarClock,
+  GraduationCap,
   Mail,
   Newspaper,
   Ticket,
   Users,
+  Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -21,6 +23,11 @@ import { Card } from '@/components/ui/card'
 import { getAllPostsForAdmin } from '@/lib/data/admin-posts'
 import { daysRemaining, getCampaign } from '@/lib/data/campaign'
 import { getCourses } from '@/lib/data/courses'
+import {
+  countEnrollmentsByStatus,
+  countPendingPayments,
+  countStudents,
+} from '@/lib/data/enrollments'
 import {
   countLeads,
   countLeadsByChannel,
@@ -80,6 +87,9 @@ export default async function AdminDashboardPage() {
     campaign,
     recentLeads,
     channelTotals,
+    students,
+    enrollmentTotals,
+    pendingPayments,
   ] = await Promise.all([
     countLeadsSince(7),
     countLeads(),
@@ -90,6 +100,9 @@ export default async function AdminDashboardPage() {
     getCampaign(),
     listLeads({}, 8),
     countLeadsByChannel(),
+    countStudents(),
+    countEnrollmentsByStatus(),
+    countPendingPayments(),
   ])
 
   const publishedPosts = posts.filter((post) => post.published).length
@@ -110,7 +123,42 @@ export default async function AdminDashboardPage() {
         }
       />
 
+      {/*
+        Above the tiles, not among them.
+
+        Everything below is a number to glance at; this is a queue with someone
+        waiting at the end of it — a student who has sent money and cannot start
+        until an admin looks. Ranking it as one more statistic is how it gets
+        missed for a week.
+      */}
+      {pendingPayments > 0 && (
+        <Link
+          href="/admin/enrollments"
+          className="mb-4 flex items-center gap-3 rounded-2xl bg-gold-50 px-5 py-4 ring-1 ring-gold-200 ring-inset transition-colors hover:bg-gold-100"
+        >
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-gold-200/70 text-gold-900">
+            <Wallet aria-hidden className="size-4" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-sans text-[0.9375rem] font-bold text-gold-900">
+              {pendingPayments} payment{pendingPayments === 1 ? '' : 's'} waiting for review
+            </span>
+            <span className="block font-sans text-xs text-gold-800">
+              Students cannot start until these are approved.
+            </span>
+          </span>
+          <ArrowRight aria-hidden className="size-4 shrink-0 text-gold-800" />
+        </Link>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <Tile
+          label="Enrollments"
+          value={enrollmentTotals.active ?? 0}
+          hint={`${enrollmentTotals.pending ?? 0} awaiting payment · ${students} student accounts`}
+          icon={GraduationCap}
+          href="/admin/enrollments"
+        />
         <Tile
           label="Leads this week"
           value={leadsThisWeek}

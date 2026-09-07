@@ -58,3 +58,7 @@ export function revalidateCampaign() {
 export function revalidateSiteContent() {
   sweep([TAGS.siteContent])
 }
+
+export function revalidatePlans() {
+  sweep([TAGS.plans])
+}

@@ -18,6 +18,7 @@
 import type { Author } from '@/lib/authors'
 import type { GalleryItem, Testimonial } from '@/lib/content'
 import type { Course, CourseCategory } from '@/lib/courses'
+import type { Plan } from '@/lib/plans'
 import type { PostFrontmatter } from '@/lib/blog'
 
 import {
@@ -695,6 +696,248 @@ export const conversationMessages = globifySite.table(
 )
 
 /* ---------------------------------------------------------------------------
+ * Learning platform — students, plans, enrollments, subscriptions, payments
+ *
+ * Everything above this line serves the marketing site: content the institute
+ * publishes and enquiries it receives. Everything below is the other half —
+ * people who have an account, what they bought, and whether it is paid for.
+ *
+ * The two are deliberately not merged. A `lead` is an enquiry the admissions
+ * team chases and may never hear from again; a `student` is an authenticated
+ * person with access to something. The same human is usually both, joined by
+ * email where that helps, but collapsing them would mean either giving every
+ * WhatsApp enquiry a login or losing the enquiries that never became one.
+ *
+ * Course *content* is still the marketing `courses` row. This phase sells
+ * access and records it; the lesson and progress tables a player needs are
+ * not here yet, so nothing pretends to track something it cannot measure.
+ * ------------------------------------------------------------------------ */
+
+export const STUDENT_STATUSES = ['active', 'suspended'] as const
+export type StudentStatus = (typeof STUDENT_STATUSES)[number]
+
+/**
+ * A person with a login. A separate table from `admin_users` rather than a
+ * `role` column on one: the two are authenticated by different providers, have
+ * no overlapping columns worth sharing, and keeping them apart means a bug in
+ * student signup can never mint an administrator.
+ */
+export const students = globifySite.table(
+  'students',
+  {
+    id: rowId().primaryKey(),
+    /** Stored lower-cased — see the note on `adminUsers.email`. */
+    email: varchar('email', { length: 191 }).notNull(),
+    name: varchar('name', { length: 191 }).notNull(),
+    phone: varchar('phone', { length: 64 }),
+    /** bcrypt hash — never the plaintext. */
+    passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+    city: varchar('city', { length: 120 }),
+    status: varchar('status', { length: 32 }).$type<StudentStatus>().notNull().default('active'),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('students_email_key').on(table.email),
+    index('students_created_at_idx').on(table.createdAt),
+    index('students_status_idx').on(table.status),
+  ],
+)
+
+/* ------------------------------------------------------------------- Plans */
+
+/**
+ * An all-access subscription — the Coursera Plus shape: one recurring fee that
+ * unlocks the whole catalogue, sold alongside (not instead of) the per-course
+ * fee already carried on `courses.originalFee`.
+ *
+ * Prices live here rather than in code because they are a commercial decision
+ * the institute changes without a deploy. The seed ships placeholders that an
+ * admin is expected to overwrite at /admin/plans before the page goes live.
+ */
+export const plans = globifySite.table(
+  'plans',
+  {
+    id: rowId().primaryKey(),
+    slug: varchar('slug', { length: 191 }).notNull(),
+    name: varchar('name', { length: 191 }).notNull(),
+    tagline: varchar('tagline', { length: 255 }).notNull(),
+    description: text('description').notNull(),
+    /** Rupees, charged once per `interval`. */
+    price: integer('price').notNull(),
+    /** Optional strike-through anchor, e.g. 12x the monthly price. */
+    compareAtPrice: integer('compare_at_price'),
+    interval: varchar('interval', { length: 16 }).$type<Plan['interval']>().notNull(),
+    features: jsonb('features').$type<string[]>().notNull().default([]),
+    badge: varchar('badge', { length: 64 }),
+    /** Draws the highlighted card on /pricing. At most one should be true. */
+    featured: boolean('featured').notNull().default(false),
+    /** Hides a plan from the public page without losing subscriptions on it. */
+    active: boolean('active').notNull().default(true),
+    sortOrder,
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('plans_slug_key').on(table.slug),
+    index('plans_active_idx').on(table.active, table.sortOrder),
+  ],
+)
+
+/* ------------------------------------------------------------- Enrollments */
+
+/**
+ * `pending` is the state everything starts in and the one that matters: the
+ * student has asked for a seat and the fee has not been confirmed yet. Access
+ * is granted only by `active`, and only an admin can set it.
+ */
+export const ENROLLMENT_STATUSES = [
+  'pending',
+  'active',
+  'rejected',
+  'cancelled',
+  'completed',
+] as const
+export type EnrollmentStatus = (typeof ENROLLMENT_STATUSES)[number]
+
+/** How the seat was paid for — a one-off fee, or an all-access subscription. */
+export const ENROLLMENT_SOURCES = ['course', 'plan'] as const
+export type EnrollmentSource = (typeof ENROLLMENT_SOURCES)[number]
+
+export const enrollments = globifySite.table(
+  'enrollments',
+  {
+    id: rowId().primaryKey(),
+    studentId: varchar('student_id', { length: 100 }).notNull(),
+    /**
+     * The slug, plus the title as it read on the day — the same snapshotting
+     * `leads` does, and for the same reason: a course can be renamed or
+     * retired, and an enrollment record must still say what was bought.
+     */
+    courseSlug: varchar('course_slug', { length: 191 }).notNull(),
+    courseTitle: varchar('course_title', { length: 255 }).notNull(),
+    status: varchar('status', { length: 32 })
+      .$type<EnrollmentStatus>()
+      .notNull()
+      .default('pending'),
+    source: varchar('source', { length: 16 }).$type<EnrollmentSource>().notNull().default('course'),
+    /** Rupees actually agreed, after whatever discount applied at the time. */
+    amount: integer('amount').notNull().default(0),
+    /** Set when an admin approves the payment; null while pending. */
+    activatedAt: timestamp('activated_at', { withTimezone: true, mode: 'date' }),
+    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    /** Admin-only notes, never shown to the student. */
+    notes: text('notes'),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    /* One seat per student per course. Someone who was rejected and applies
+       again updates this row rather than accumulating duplicates. */
+    uniqueIndex('enrollments_student_course_key').on(table.studentId, table.courseSlug),
+    index('enrollments_student_idx').on(table.studentId),
+    index('enrollments_status_idx').on(table.status),
+    index('enrollments_course_idx').on(table.courseSlug),
+    index('enrollments_created_at_idx').on(table.createdAt),
+  ],
+)
+
+/* ----------------------------------------------------------- Subscriptions */
+
+export const SUBSCRIPTION_STATUSES = ['pending', 'active', 'expired', 'cancelled'] as const
+export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number]
+
+/**
+ * One row per purchase of an all-access plan, not one per student. A renewal
+ * is a new row, so the billing history is the table itself and `expiresAt`
+ * never has to be rewritten in place.
+ */
+export const subscriptions = globifySite.table(
+  'subscriptions',
+  {
+    id: rowId().primaryKey(),
+    studentId: varchar('student_id', { length: 100 }).notNull(),
+    planId: varchar('plan_id', { length: 100 }).notNull(),
+    /** Snapshotted for the same reason as `enrollments.courseTitle`. */
+    planSlug: varchar('plan_slug', { length: 191 }).notNull(),
+    planName: varchar('plan_name', { length: 191 }).notNull(),
+    interval: varchar('interval', { length: 16 }).$type<Plan['interval']>().notNull(),
+    amount: integer('amount').notNull().default(0),
+    status: varchar('status', { length: 32 })
+      .$type<SubscriptionStatus>()
+      .notNull()
+      .default('pending'),
+    /** Both set on approval — a pending subscription has no term yet. */
+    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index('subscriptions_student_idx').on(table.studentId, table.status),
+    index('subscriptions_expires_at_idx').on(table.expiresAt),
+    index('subscriptions_created_at_idx').on(table.createdAt),
+  ],
+)
+
+/* ---------------------------------------------------------------- Payments */
+
+/**
+ * No card gateway. Stripe does not onboard Pakistani merchants, and the
+ * institute already collects fees by bank transfer and mobile wallet — so a
+ * payment here is a *claim*: the student says they sent money and uploads the
+ * receipt, and an admin turns that into access. `status` is the whole point of
+ * the table, and nothing but an approval grants anything.
+ */
+export const PAYMENT_METHODS = ['bank_transfer', 'jazzcash', 'easypaisa', 'cash'] as const
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+
+export const PAYMENT_STATUSES = ['submitted', 'approved', 'rejected'] as const
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number]
+
+export const PAYMENT_PURPOSES = ['course', 'plan'] as const
+export type PaymentPurpose = (typeof PAYMENT_PURPOSES)[number]
+
+export const payments = globifySite.table(
+  'payments',
+  {
+    id: rowId().primaryKey(),
+    /** Short, human-quotable reference, e.g. `GT-PAY-7QK2M4`. */
+    reference: varchar('reference', { length: 64 }).notNull(),
+    studentId: varchar('student_id', { length: 100 }).notNull(),
+    purpose: varchar('purpose', { length: 16 }).$type<PaymentPurpose>().notNull(),
+    /** Exactly one of these is set, matching `purpose`. */
+    enrollmentId: varchar('enrollment_id', { length: 100 }),
+    subscriptionId: varchar('subscription_id', { length: 100 }),
+    amount: integer('amount').notNull(),
+    method: varchar('method', { length: 32 }).$type<PaymentMethod>().notNull(),
+    /** The student's own transaction id from their bank or wallet app. */
+    senderReference: varchar('sender_reference', { length: 191 }),
+    senderName: varchar('sender_name', { length: 191 }),
+    /** Uploaded receipt under /images/uploads/payments — see image-upload.ts. */
+    proofPath: varchar('proof_path', { length: 500 }),
+    status: varchar('status', { length: 32 }).$type<PaymentStatus>().notNull().default('submitted'),
+    /** Anything the student wants the admissions team to know. */
+    note: text('note'),
+    /** The admin's reason, shown to the student when a claim is rejected. */
+    reviewNote: text('review_note'),
+    reviewedBy: varchar('reviewed_by', { length: 191 }),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true, mode: 'date' }),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    uniqueIndex('payments_reference_key').on(table.reference),
+    index('payments_student_idx').on(table.studentId),
+    index('payments_status_idx').on(table.status, table.createdAt),
+    index('payments_enrollment_idx').on(table.enrollmentId),
+    index('payments_subscription_idx').on(table.subscriptionId),
+  ],
+)
+
+/* ---------------------------------------------------------------------------
  * Inferred row types — used across the data layer and admin server actions
  * ------------------------------------------------------------------------ */
 
@@ -720,3 +963,8 @@ export type ConversationRow = typeof conversations.$inferSelect
 export type ConversationMessageRow = typeof conversationMessages.$inferSelect
 export type SubscriberRow = typeof newsletterSubscribers.$inferSelect
 export type AdminUserRow = typeof adminUsers.$inferSelect
+export type StudentRow = typeof students.$inferSelect
+export type PlanRow = typeof plans.$inferSelect
+export type EnrollmentRow = typeof enrollments.$inferSelect
+export type SubscriptionRow = typeof subscriptions.$inferSelect
+export type PaymentRow = typeof payments.$inferSelect

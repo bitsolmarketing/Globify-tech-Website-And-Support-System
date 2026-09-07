@@ -18,6 +18,7 @@ export const TAGS = {
   gallery: 'gallery',
   campaign: 'campaign',
   siteContent: 'site-content',
+  plans: 'plans',
 } as const
 
 export type CacheTag = (typeof TAGS)[keyof typeof TAGS]
