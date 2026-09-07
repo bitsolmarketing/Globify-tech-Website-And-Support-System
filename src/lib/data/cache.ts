@@ -67,36 +67,31 @@ const CONNECTION_ERROR_CODES = new Set([
   'ETIMEDOUT',
   'EAI_AGAIN',
 
-  /* postgres-js's own lifecycle codes for a connection that never opened or
-     was torn down underneath an in-flight query. */
-  'CONNECT_TIMEOUT',
-  'CONNECTION_CLOSED',
-  'CONNECTION_DESTROYED',
-  'CONNECTION_ENDED',
+  /* mysql2's own lifecycle codes for a connection that never opened or was
+     torn down underneath an in-flight query. */
+  'PROTOCOL_CONNECTION_LOST',
+  'PROTOCOL_SEQUENCE_TIMEOUT',
+  'PROTOCOL_ENQUEUE_AFTER_QUIT',
+  'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
 
-  /* Postgres SQLSTATE class 08 — connection exception, in full. */
-  '08000',
-  '08001',
-  '08003',
-  '08004',
-  '08006',
-
-  /* Class 28 — the credentials are refused. Not a per-query fault: every read
-     will be refused identically until the URL changes. */
-  '28000',
-  '28P01',
+  /* The credentials are refused. Not a per-query fault: every read will be
+     refused identically until the URL changes. */
+  'ER_ACCESS_DENIED_ERROR',
+  'ER_DBACCESS_DENIED_ERROR',
 
   /* The named database does not exist. Same reasoning as above. */
-  '3D000',
+  'ER_BAD_DB_ERROR',
 
-  /* 53300 too_many_connections — the tier's ceiling is reached, so backing off
-     is the only thing that helps. 57P01/57P02 are the server shutting down or
-     crashing; 57P03 is "cannot connect now", which is precisely what a paused
-     Supabase project answers while it wakes up. */
-  '53300',
-  '57P01',
-  '57P02',
-  '57P03',
+  /* The ceiling is reached, so backing off is the only thing that helps —
+     shared hosting caps connections per user far lower than the server's
+     global limit, so this is the one most likely to be hit here. */
+  'ER_CON_COUNT_ERROR',
+  'ER_TOO_MANY_USER_CONNECTIONS',
+  'ER_USER_LIMIT_REACHED',
+
+  /* The server is going away, or has. */
+  'ER_SERVER_SHUTDOWN',
+  'ER_QUERY_INTERRUPTED',
 
   /* Raised by the query bound in `src/db/index.ts`, and the one code here that
      the driver could never have reported by itself.
@@ -106,13 +101,8 @@ const CONNECTION_ERROR_CODES = new Set([
      connection that simply stops answering says nothing at all, so the breaker
      never opened, each of the nine dashboard reads waited out its own timeout,
      and the request reached the proxy's limit anyway. A hang only becomes
-     catchable once something turns it into an error — and this is that error.
-
-     57014 is the same fault reported from the server side, a statement
-     cancelled for outstaying its welcome. Nothing in this app cancels a query
-     for any other reason. */
+     catchable once something turns it into an error — and this is that error. */
   'QUERY_TIMEOUT',
-  '57014',
 ])
 
 /**

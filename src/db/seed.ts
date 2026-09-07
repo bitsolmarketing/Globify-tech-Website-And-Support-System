@@ -1,18 +1,19 @@
 /**
- * One-off import of the hardcoded site content into Postgres (Supabase).
+ * One-off import of the hardcoded site content into MySQL.
  *
- * Run with `npm run db:seed`. It is idempotent — every insert has an
- * `onConflictDoUpdate` keyed on a natural, deterministic identifier, so
- * re-running it refreshes rows rather than duplicating them. Nothing is
- * deleted, so admin-authored records added later survive a re-seed.
+ * Run with `npm run db:seed`. It is idempotent — every insert carries
+ * `ON DUPLICATE KEY UPDATE`, so re-running it refreshes rows rather than
+ * duplicating them. Only the explicitly retired course slugs are deleted, so
+ * admin-authored records added later survive a re-seed.
  *
- * Note the conflict targets. MySQL's `ON DUPLICATE KEY UPDATE` fired on
- * whichever unique index a row happened to violate, so it never had to be told
- * which one; Postgres requires the target to be named. For `courses`, `authors`,
- * `posts` and `admin_users` that target is the slug or email and NOT the id —
- * those rows are inserted with a fresh uuid on every run, so a conflict on `id`
- * could never fire and the second seed would abort on the slug index instead of
- * updating the row.
+ * MySQL fires that clause on whichever unique index the row actually violates,
+ * so unlike Postgres's `onConflictDoUpdate` it never has to be told which one.
+ * That matters more than it sounds: for `courses`, `authors`, `posts` and
+ * `admin_users` the conflict is on the slug or email and never on the id —
+ * those rows are inserted with a fresh uuid on every run, so an id conflict
+ * could not fire — and naming the wrong target under Postgres aborted the
+ * second seed instead of updating the row. Here there is no target to get
+ * wrong.
  *
  * Sources:
  *   src/lib/courses.ts   -> courses, course_categories
@@ -112,8 +113,7 @@ async function seedCourses(db: ReturnType<typeof getDb>) {
     await db
       .insert(coursesTable)
       .values({ id: randomUUID(), slug, badge: badge ?? null, sortOrder: index, ...rest })
-      .onConflictDoUpdate({
-        target: coursesTable.slug,
+      .onDuplicateKeyUpdate({
         set: { badge: badge ?? null, sortOrder: index, updatedAt: new Date(), ...rest },
       })
   }
@@ -128,10 +128,18 @@ async function seedCourses(db: ReturnType<typeof getDb>) {
    * Only the slugs named in `retiredCourseSlugs` are removed. A blanket
    * "delete anything not in the seed" would also delete a course somebody
    * added through /admin/courses, which is a supported thing to do. */
+  /* Read before deleting. MySQL has no `RETURNING`, and the count below has to
+     describe what was actually removed rather than how many slugs were offered
+     for removal — otherwise a re-run reports retiring courses that went years
+     ago. */
   const retired = await db
-    .delete(coursesTable)
+    .select({ slug: coursesTable.slug })
+    .from(coursesTable)
     .where(inArray(coursesTable.slug, [...retiredCourseSlugs]))
-    .returning({ slug: coursesTable.slug })
+
+  if (retired.length) {
+    await db.delete(coursesTable).where(inArray(coursesTable.slug, [...retiredCourseSlugs]))
+  }
 
   step('courses', courses.length)
   if (retired.length) step('courses retired', retired.length)
@@ -146,8 +154,7 @@ async function seedAuthors(db: ReturnType<typeof getDb>) {
     await db
       .insert(authorsTable)
       .values({ id: randomUUID(), slug, sortOrder: index, ...rest })
-      .onConflictDoUpdate({
-        target: authorsTable.slug,
+      .onDuplicateKeyUpdate({
         set: { sortOrder: index, updatedAt: new Date(), ...rest },
       })
   }
@@ -196,8 +203,7 @@ async function seedPosts(db: ReturnType<typeof getDb>) {
     await db
       .insert(postsTable)
       .values({ id: randomUUID(), slug, ...values })
-      .onConflictDoUpdate({
-        target: postsTable.slug,
+      .onDuplicateKeyUpdate({
         set: { updatedAt: new Date(), ...values },
       })
   }
@@ -214,8 +220,7 @@ async function seedTestimonials(db: ReturnType<typeof getDb>) {
     await db
       .insert(testimonialsTable)
       .values({ id: rowId, ...values })
-      .onConflictDoUpdate({
-        target: testimonialsTable.id,
+      .onDuplicateKeyUpdate({
         set: { updatedAt: new Date(), ...values },
       })
   }
@@ -239,7 +244,7 @@ async function seedFaqs(db: ReturnType<typeof getDb>) {
     await db
       .insert(faqsTable)
       .values({ id: id('faq', faq.question), ...values })
-      .onConflictDoUpdate({ target: faqsTable.id, set: { updatedAt: new Date(), ...values } })
+      .onDuplicateKeyUpdate({ set: { updatedAt: new Date(), ...values } })
   }
   step('faqs', faqs.length)
 }
@@ -254,7 +259,7 @@ async function seedGallery(db: ReturnType<typeof getDb>) {
     await db
       .insert(galleryTable)
       .values({ id: rowId, ...values })
-      .onConflictDoUpdate({ target: galleryTable.id, set: { updatedAt: new Date(), ...values } })
+      .onDuplicateKeyUpdate({ set: { updatedAt: new Date(), ...values } })
   }
   step('gallery items', galleryItems.length)
 }
@@ -275,7 +280,7 @@ async function seedStats(db: ReturnType<typeof getDb>) {
     await db
       .insert(statsTable)
       .values({ id: id('stat', stat.label), ...values })
-      .onConflictDoUpdate({ target: statsTable.id, set: { updatedAt: new Date(), ...values } })
+      .onDuplicateKeyUpdate({ set: { updatedAt: new Date(), ...values } })
   }
   step('stats', stats.length)
 }
@@ -287,7 +292,7 @@ async function seedBenefits(db: ReturnType<typeof getDb>) {
     await db
       .insert(benefitsTable)
       .values({ id: id('benefit', benefit.title), ...values })
-      .onConflictDoUpdate({ target: benefitsTable.id, set: { updatedAt: new Date(), ...values } })
+      .onDuplicateKeyUpdate({ set: { updatedAt: new Date(), ...values } })
   }
   step('benefits', benefits.length)
 }
@@ -299,8 +304,7 @@ async function seedMilestones(db: ReturnType<typeof getDb>) {
     await db
       .insert(milestonesTable)
       .values({ id: id('milestone', milestone.year), ...values })
-      .onConflictDoUpdate({
-        target: milestonesTable.id,
+      .onDuplicateKeyUpdate({
         set: { updatedAt: new Date(), ...values },
       })
   }
@@ -331,8 +335,7 @@ async function seedDifferentiators(db: ReturnType<typeof getDb>) {
     await db
       .insert(differentiatorsTable)
       .values({ id: id('diff', item.title), ...values })
-      .onConflictDoUpdate({
-        target: differentiatorsTable.id,
+      .onDuplicateKeyUpdate({
         set: { updatedAt: new Date(), ...values },
       })
   }
@@ -346,8 +349,7 @@ async function seedTrustBadges(db: ReturnType<typeof getDb>) {
     await db
       .insert(trustBadgesTable)
       .values({ id: id('badge', badge.label), ...values })
-      .onConflictDoUpdate({
-        target: trustBadgesTable.id,
+      .onDuplicateKeyUpdate({
         set: { updatedAt: new Date(), ...values },
       })
   }
@@ -372,8 +374,7 @@ async function seedCourseCategories(db: ReturnType<typeof getDb>) {
     await db
       .insert(courseCategoriesTable)
       .values({ id: id('cat', name), ...values })
-      .onConflictDoUpdate({
-        target: courseCategoriesTable.id,
+      .onDuplicateKeyUpdate({
         set: { updatedAt: new Date(), ...values },
       })
   }
@@ -419,8 +420,7 @@ async function seedSiteSettings(db: ReturnType<typeof getDb>) {
   await db
     .insert(siteSettingsTable)
     .values({ id: 'default', ...values })
-    .onConflictDoUpdate({
-      target: siteSettingsTable.id,
+    .onDuplicateKeyUpdate({
       set: { updatedAt: new Date(), ...values },
     })
 
@@ -434,8 +434,7 @@ async function seedSocialLinks(db: ReturnType<typeof getDb>) {
     await db
       .insert(socialLinksTable)
       .values({ id: id('social', link.name), ...values })
-      .onConflictDoUpdate({
-        target: socialLinksTable.id,
+      .onDuplicateKeyUpdate({
         set: { updatedAt: new Date(), ...values },
       })
   }
@@ -534,8 +533,7 @@ async function seedNavLinks(db: ReturnType<typeof getDb>) {
     await db
       .insert(navLinksTable)
       .values(row)
-      .onConflictDoUpdate({
-        target: navLinksTable.id,
+      .onDuplicateKeyUpdate({
         set: { updatedAt: new Date(), ...values },
       })
   }
@@ -563,7 +561,7 @@ async function seedCampaign(db: ReturnType<typeof getDb>) {
   await db
     .insert(campaignSettings)
     .values({ id: 'default', ...values })
-    .onConflictDoUpdate({ target: campaignSettings.id, set: { updatedAt: new Date(), ...values } })
+    .onDuplicateKeyUpdate({ set: { updatedAt: new Date(), ...values } })
 
   step('campaign settings', 1)
 }
@@ -591,8 +589,7 @@ async function seedAdminUser(db: ReturnType<typeof getDb>) {
   await db
     .insert(adminUsers)
     .values({ id: randomUUID(), email, name, passwordHash })
-    .onConflictDoUpdate({
-      target: adminUsers.email,
+    .onDuplicateKeyUpdate({
       set: { name, passwordHash, updatedAt: new Date() },
     })
 
