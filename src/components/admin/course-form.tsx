@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { useFieldArray, useForm } from 'react-hook-form'
+import { useController, useFieldArray, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 
 import {
@@ -16,6 +16,7 @@ import {
   TextareaField,
 } from '@/components/admin/form-fields'
 import { Button } from '@/components/ui/button'
+import { ImageUploadField } from '@/components/admin/image-upload-field'
 import { toast } from '@/components/ui/toaster'
 import {
   courseBadges,
@@ -25,6 +26,7 @@ import {
 } from '@/lib/admin/schemas'
 import { courseCategories } from '@/lib/courses'
 import type { ActionResult } from '@/lib/admin/guard'
+import { uploadCourseImage } from '@/app/admin/(dashboard)/courses/actions'
 
 type Props = {
   defaultValues: CourseFormValues
@@ -72,6 +74,8 @@ export function CourseForm({
     mode: 'onBlur',
     defaultValues,
   })
+
+  const imageField = useController({ control, name: 'image' })
 
   const curriculum = useFieldArray({ control, name: 'curriculum' })
   const careers = useFieldArray({ control, name: 'careers' })
@@ -226,12 +230,15 @@ export function CourseForm({
         />
 
         <div className="grid gap-5 sm:grid-cols-2">
-          <TextField
-            label="Image path"
+          <ImageUploadField
+            label="Course image"
             required
-            placeholder="/images/generated/courses/ai-and-automation.webp"
+            value={imageField.field.value}
+            onChange={imageField.field.onChange}
+            onBlur={imageField.field.onBlur}
+            uploadAction={uploadCourseImage}
             error={errors.image?.message}
-            {...register('image')}
+            hint="Upload a photo, or paste an existing path."
           />
           <TextField
             label="Icon"
