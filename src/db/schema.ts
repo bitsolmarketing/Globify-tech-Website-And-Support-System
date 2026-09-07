@@ -1,60 +1,58 @@
 /**
- * Drizzle schema for the Globify admin — PostgreSQL (Supabase).
+ * Drizzle schema for the Globify admin — MySQL.
  *
  * The existing TypeScript types stay the source of truth: every nested shape
- * (`curriculum`, `careers`, `faqs`, `social`, …) is a `jsonb` column stamped
+ * (`curriculum`, `careers`, `faqs`, `social`, …) is a `json` column stamped
  * with `.$type<>()` from `@/lib/courses`, `@/lib/authors` and `@/lib/content`.
  * Change the type and the column stops compiling — the two cannot drift.
  *
  * These are type-only imports, so nothing from the seed data files is bundled
  * into drizzle-kit or the server runtime.
  *
- * Column lengths are carried over from the MySQL schema this replaced. Postgres
- * does not need them — it has no index-size limit to design around, and `text`
- * costs the same as a bounded `varchar` — but they double as the last line of
- * validation before a value is stored, so they are kept deliberately rather
- * than widened away.
+ * Column lengths matter here in a way they did not under Postgres: InnoDB caps
+ * an index key at 3072 bytes and `utf8mb4` spends four per character, so the
+ * 191-character keys below are the historical `255 * 4 > 767` workaround kept
+ * deliberately rather than widened away.
  */
 import type { Author } from '@/lib/authors'
 import type { GalleryItem, Testimonial } from '@/lib/content'
 import type { Course, CourseCategory } from '@/lib/courses'
 import type { PostFrontmatter } from '@/lib/blog'
 
+import { sql } from 'drizzle-orm'
 import {
   boolean,
+  customType,
   date,
-  doublePrecision,
+  datetime,
+  double,
   index,
-  integer,
-  jsonb,
-  pgSchema,
+  int,
+  mysqlTable,
   smallint,
   text,
-  timestamp,
   uniqueIndex,
   varchar,
-} from 'drizzle-orm/pg-core'
+} from 'drizzle-orm/mysql-core'
+
+/**
+ * JSON columns, round-tripped by hand.
+ *
+ * mysql2 already parses a `JSON` column into a value, but it is handed back to
+ * drizzle as a string on some paths and as an object on others depending on how
+ * the driver was configured — so the built-in helper cannot be relied on to
+ * return the same shape twice. Doing both directions explicitly makes the
+ * column behave identically whatever the driver decides.
+ */
+const json = customType<{ data: unknown; driverData: string }>({
+  dataType: () => 'json',
+  toDriver: (value) => JSON.stringify(value),
+  fromDriver: (value) => (typeof value === 'string' ? JSON.parse(value) : value),
+})
 
 /* ---------------------------------------------------------------------------
  * Schema
  * ------------------------------------------------------------------------ */
-
-/**
- * Every table below lives in `globify_site`, not `public`.
- *
- * The Supabase project is shared with the AI assistant, whose Prisma schema
- * owns `public` — 33 tables including its own `courses`, which means the same
- * name refers to two unrelated things in one database. Namespacing this app's
- * tables removes the collision outright, and it also makes the boundary
- * enforceable rather than conventional: `schemaFilter` in `drizzle.config.ts`
- * scopes drizzle-kit to this schema, so a migration generated here cannot
- * propose dropping a table it does not own, however confidently it thinks the
- * schema has drifted.
- *
- * Drizzle qualifies every generated statement with the schema name, so nothing
- * depends on the connection's `search_path`.
- */
-export const globifySite = pgSchema('globify_site')
 
 /* ---------------------------------------------------------------------------
  * Shared column helpers
@@ -64,41 +62,41 @@ export const globifySite = pgSchema('globify_site')
 const rowId = () => varchar('id', { length: 100 })
 
 /**
- * `timestamptz`, not `timestamp`.
+ * `datetime`, not `timestamp`.
  *
- * The MySQL schema stored DATETIME and relied on the driver being told
- * `timezone: 'Z'` to read it back as UTC — an application-level convention that
- * nothing in the database enforced, so any client that connected without it
- * silently read every timestamp in local time. Postgres has a type for this:
- * `timestamptz` stores an absolute instant, and correctness no longer depends
- * on how the client was configured.
+ * MySQL's `TIMESTAMP` is a 32-bit offset from the epoch and stops at
+ * 2038-01-19. `DATETIME` has no such ceiling. Nothing here is likely to outlive
+ * 2038, but a column that silently cannot store a future date is the kind of
+ * fault that surfaces years later as corrupt data rather than an error.
+ *
+ * These store UTC by convention, enforced by the driver being given
+ * `timezone: 'Z'` in `src/db/index.ts` — MySQL has no timezone-aware type, so
+ * unlike Postgres's `timestamptz` the correctness depends on that setting.
+ * Change it there and every timestamp in the database shifts.
  */
-const createdAt = timestamp('created_at', { withTimezone: true, mode: 'date' })
+const createdAt = datetime('created_at', { mode: 'date' })
   .notNull()
-  .defaultNow()
+  .default(sql`CURRENT_TIMESTAMP`)
 
 /**
- * Postgres has no `ON UPDATE CURRENT_TIMESTAMP`. The MySQL tables carried it so
- * that writes made outside the ORM — a psql session, a Supabase table editor
- * edit — still bumped the column, and `$onUpdateFn` only covers writes Drizzle
- * itself issues.
- *
- * `drizzle/pg/0001_updated_at_triggers.sql` restores the database-side half
- * with a trigger per table, so both paths keep working.
+ * `ON UPDATE CURRENT_TIMESTAMP` is native here, so writes made outside the ORM
+ * — a mysql shell, phpMyAdmin — still bump the column. `$onUpdateFn` covers the
+ * writes Drizzle itself issues. Under Postgres this needed a trigger per table
+ * (`drizzle/pg/0001_updated_at_triggers.sql`); MySQL gives it for free.
  */
-const updatedAt = timestamp('updated_at', { withTimezone: true, mode: 'date' })
+const updatedAt = datetime('updated_at', { mode: 'date' })
   .notNull()
-  .defaultNow()
+  .default(sql`CURRENT_TIMESTAMP`)
   .$onUpdateFn(() => new Date())
 
 /** Preserves the hand-tuned ordering of the original hardcoded arrays. */
-const sortOrder = integer('sort_order').notNull().default(0)
+const sortOrder = int('sort_order').notNull().default(0)
 
 /* ---------------------------------------------------------------------------
  * Auth — a single admin user, seeded from env vars
  * ------------------------------------------------------------------------ */
 
-export const adminUsers = globifySite.table(
+export const adminUsers = mysqlTable(
   'admin_users',
   {
     id: rowId().primaryKey(),
@@ -113,7 +111,7 @@ export const adminUsers = globifySite.table(
     name: varchar('name', { length: 191 }).notNull(),
     /** bcrypt hash — never the plaintext. */
     passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-    lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),
+    lastLoginAt: datetime('last_login_at', { mode: 'date' }),
     createdAt,
     updatedAt,
   },
@@ -124,7 +122,7 @@ export const adminUsers = globifySite.table(
  * Courses
  * ------------------------------------------------------------------------ */
 
-export const courses = globifySite.table(
+export const courses = mysqlTable(
   'courses',
   {
     id: rowId().primaryKey(),
@@ -135,29 +133,29 @@ export const courses = globifySite.table(
     tagline: varchar('tagline', { length: 500 }).notNull(),
     /** ~155 chars — used verbatim as the meta description. */
     description: text('description').notNull(),
-    overview: jsonb('overview').$type<string[]>().notNull(),
+    overview: json('overview').$type<string[]>().notNull(),
     image: varchar('image', { length: 500 }).notNull(),
     icon: varchar('icon', { length: 64 }).notNull(),
     duration: varchar('duration', { length: 64 }).notNull(),
-    durationWeeks: integer('duration_weeks').notNull(),
-    hoursPerWeek: integer('hours_per_week').notNull(),
+    durationWeeks: int('duration_weeks').notNull(),
+    hoursPerWeek: int('hours_per_week').notNull(),
     level: varchar('level', { length: 64 }).$type<Course['level']>().notNull(),
-    originalFee: integer('original_fee').notNull(),
-    mode: jsonb('mode').$type<string[]>().notNull(),
+    originalFee: int('original_fee').notNull(),
+    mode: json('mode').$type<string[]>().notNull(),
     language: varchar('language', { length: 64 }).notNull(),
-    skills: jsonb('skills').$type<string[]>().notNull(),
-    tools: jsonb('tools').$type<string[]>().notNull(),
-    outcomes: jsonb('outcomes').$type<string[]>().notNull(),
-    curriculum: jsonb('curriculum').$type<Course['curriculum']>().notNull(),
-    careers: jsonb('careers').$type<Course['careers']>().notNull(),
-    projects: jsonb('projects').$type<string[]>().notNull(),
+    skills: json('skills').$type<string[]>().notNull(),
+    tools: json('tools').$type<string[]>().notNull(),
+    outcomes: json('outcomes').$type<string[]>().notNull(),
+    curriculum: json('curriculum').$type<Course['curriculum']>().notNull(),
+    careers: json('careers').$type<Course['careers']>().notNull(),
+    projects: json('projects').$type<string[]>().notNull(),
     instructorSlug: varchar('instructor_slug', { length: 191 }).notNull(),
-    rating: doublePrecision('rating').notNull().default(0),
-    reviews: integer('reviews').notNull().default(0),
-    enrolled: integer('enrolled').notNull().default(0),
+    rating: double('rating').notNull().default(0),
+    reviews: int('reviews').notNull().default(0),
+    enrolled: int('enrolled').notNull().default(0),
     featured: boolean('featured').notNull().default(false),
     badge: varchar('badge', { length: 64 }).$type<NonNullable<Course['badge']>>(),
-    faqs: jsonb('faqs').$type<Course['faqs']>().notNull(),
+    faqs: json('faqs').$type<Course['faqs']>().notNull(),
     sortOrder,
     createdAt,
     updatedAt,
@@ -174,7 +172,7 @@ export const courses = globifySite.table(
  * Authors / instructors
  * ------------------------------------------------------------------------ */
 
-export const authors = globifySite.table(
+export const authors = mysqlTable(
   'authors',
   {
     id: rowId().primaryKey(),
@@ -183,11 +181,11 @@ export const authors = globifySite.table(
     role: varchar('role', { length: 191 }).notNull(),
     credentials: varchar('credentials', { length: 500 }).notNull(),
     bio: text('bio').notNull(),
-    longBio: jsonb('long_bio').$type<string[]>().notNull(),
+    longBio: json('long_bio').$type<string[]>().notNull(),
     avatar: varchar('avatar', { length: 500 }).notNull(),
-    expertise: jsonb('expertise').$type<string[]>().notNull(),
-    yearsExperience: integer('years_experience').notNull(),
-    social: jsonb('social').$type<Author['social']>().notNull(),
+    expertise: json('expertise').$type<string[]>().notNull(),
+    yearsExperience: int('years_experience').notNull(),
+    social: json('social').$type<Author['social']>().notNull(),
     sortOrder,
     createdAt,
     updatedAt,
@@ -199,7 +197,7 @@ export const authors = globifySite.table(
  * Blog posts — front-matter as columns, MDX body as text
  * ------------------------------------------------------------------------ */
 
-export const posts = globifySite.table(
+export const posts = mysqlTable(
   'posts',
   {
     id: rowId().primaryKey(),
@@ -212,11 +210,11 @@ export const posts = globifySite.table(
     /** Author slug — matches `authors.slug`. */
     author: varchar('author', { length: 191 }).notNull(),
     category: varchar('category', { length: 191 }).notNull(),
-    tags: jsonb('tags').$type<string[]>().notNull(),
+    tags: json('tags').$type<string[]>().notNull(),
     image: varchar('image', { length: 500 }).notNull(),
     imageAlt: varchar('image_alt', { length: 500 }).notNull(),
     featured: boolean('featured').notNull().default(false),
-    faqs: jsonb('faqs').$type<NonNullable<PostFrontmatter['faqs']>>().notNull(),
+    faqs: json('faqs').$type<NonNullable<PostFrontmatter['faqs']>>().notNull(),
     /** Raw markdown body, exactly as it lived under the MDX front-matter. */
     body: text('body').notNull(),
     /** Drafts stay out of the public site but remain editable in the admin. */
@@ -237,7 +235,7 @@ export const posts = globifySite.table(
  * Testimonials
  * ------------------------------------------------------------------------ */
 
-export const testimonials = globifySite.table(
+export const testimonials = mysqlTable(
   'testimonials',
   {
     /** Keeps the original `ts-1` ids from content.ts; new rows get a uuid. */
@@ -268,7 +266,7 @@ export const testimonials = globifySite.table(
  * FAQs
  * ------------------------------------------------------------------------ */
 
-export const faqs = globifySite.table(
+export const faqs = mysqlTable(
   'faqs',
   {
     id: rowId().primaryKey(),
@@ -291,7 +289,7 @@ export const faqs = globifySite.table(
  * Gallery
  * ------------------------------------------------------------------------ */
 
-export const galleryItems = globifySite.table(
+export const galleryItems = mysqlTable(
   'gallery_items',
   {
     id: rowId().primaryKey(),
@@ -299,8 +297,8 @@ export const galleryItems = globifySite.table(
     alt: varchar('alt', { length: 500 }).notNull(),
     caption: varchar('caption', { length: 500 }).notNull(),
     category: varchar('category', { length: 64 }).$type<GalleryItem['category']>().notNull(),
-    width: integer('width').notNull(),
-    height: integer('height').notNull(),
+    width: int('width').notNull(),
+    height: int('height').notNull(),
     sortOrder,
     createdAt,
     updatedAt,
@@ -315,9 +313,9 @@ export const galleryItems = globifySite.table(
 /** Two of the six stats are computed from the catalogue rather than typed in. */
 export type StatSource = 'courseCount' | 'averageRating'
 
-export const stats = globifySite.table('stats', {
+export const stats = mysqlTable('stats', {
   id: rowId().primaryKey(),
-  value: doublePrecision('value').notNull(),
+  value: double('value').notNull(),
   suffix: varchar('suffix', { length: 16 }).notNull().default(''),
   label: varchar('label', { length: 191 }).notNull(),
   description: varchar('description', { length: 500 }).notNull(),
@@ -329,7 +327,7 @@ export const stats = globifySite.table('stats', {
   updatedAt,
 })
 
-export const benefits = globifySite.table('benefits', {
+export const benefits = mysqlTable('benefits', {
   id: rowId().primaryKey(),
   title: varchar('title', { length: 255 }).notNull(),
   description: text('description').notNull(),
@@ -339,7 +337,7 @@ export const benefits = globifySite.table('benefits', {
   updatedAt,
 })
 
-export const milestones = globifySite.table('milestones', {
+export const milestones = mysqlTable('milestones', {
   id: rowId().primaryKey(),
   year: varchar('year', { length: 16 }).notNull(),
   title: varchar('title', { length: 255 }).notNull(),
@@ -353,7 +351,7 @@ export const milestones = globifySite.table('milestones', {
  * Why Choose Us — differentiators and the hero trust strip
  * ------------------------------------------------------------------------ */
 
-export const differentiators = globifySite.table('differentiators', {
+export const differentiators = mysqlTable('differentiators', {
   id: rowId().primaryKey(),
   title: varchar('title', { length: 255 }).notNull(),
   body: text('body').notNull(),
@@ -364,7 +362,7 @@ export const differentiators = globifySite.table('differentiators', {
   updatedAt,
 })
 
-export const trustBadges = globifySite.table('trust_badges', {
+export const trustBadges = mysqlTable('trust_badges', {
   id: rowId().primaryKey(),
   label: varchar('label', { length: 191 }).notNull(),
   icon: varchar('icon', { length: 64 }).notNull(),
@@ -377,7 +375,7 @@ export const trustBadges = globifySite.table('trust_badges', {
  * Course categories — the catalogue filter tabs and mega-menu headings
  * ------------------------------------------------------------------------ */
 
-export const courseCategories = globifySite.table(
+export const courseCategories = mysqlTable(
   'course_categories',
   {
     id: rowId().primaryKey(),
@@ -398,7 +396,7 @@ export const courseCategories = globifySite.table(
 export type OpeningHour = { days: string; time: string }
 export type OpeningHoursSpec = { days: string[]; opens: string; closes: string }
 
-export const siteSettings = globifySite.table('site_settings', {
+export const siteSettings = mysqlTable('site_settings', {
   id: rowId().primaryKey(),
   name: varchar('name', { length: 191 }).notNull(),
   shortName: varchar('short_name', { length: 191 }).notNull(),
@@ -407,7 +405,7 @@ export const siteSettings = globifySite.table('site_settings', {
   description: text('description').notNull(),
   founded: varchar('founded', { length: 16 }).notNull(),
   logo: varchar('logo', { length: 500 }).notNull(),
-  keywords: jsonb('keywords').$type<string[]>().notNull(),
+  keywords: json('keywords').$type<string[]>().notNull(),
   /** Admission counsellor — backs every plain `tel:` link on the site. */
   phone: varchar('phone', { length: 64 }).notNull(),
   phoneHref: varchar('phone_href', { length: 64 }).notNull(),
@@ -425,17 +423,17 @@ export const siteSettings = globifySite.table('site_settings', {
   addressPostalCode: varchar('address_postal_code', { length: 32 }).notNull(),
   addressCountry: varchar('address_country', { length: 8 }).notNull(),
   addressCountryName: varchar('address_country_name', { length: 128 }).notNull(),
-  latitude: doublePrecision('latitude').notNull(),
-  longitude: doublePrecision('longitude').notNull(),
+  latitude: double('latitude').notNull(),
+  longitude: double('longitude').notNull(),
   mapEmbedUrl: varchar('map_embed_url', { length: 1000 }).notNull(),
   /** Google Business Profile — every "find us" link points here. */
   officeUrl: varchar('office_url', { length: 1000 }).notNull(),
-  openingHours: jsonb('opening_hours').$type<OpeningHour[]>().notNull(),
-  openingHoursSpec: jsonb('opening_hours_spec').$type<OpeningHoursSpec>().notNull(),
+  openingHours: json('opening_hours').$type<OpeningHour[]>().notNull(),
+  openingHoursSpec: json('opening_hours_spec').$type<OpeningHoursSpec>().notNull(),
   updatedAt,
 })
 
-export const socialLinks = globifySite.table('social_links', {
+export const socialLinks = mysqlTable('social_links', {
   id: rowId().primaryKey(),
   name: varchar('name', { length: 64 }).notNull(),
   href: varchar('href', { length: 500 }).notNull(),
@@ -461,7 +459,7 @@ export const NAV_LOCATIONS = [
 ] as const
 export type NavLocation = (typeof NAV_LOCATIONS)[number]
 
-export const navLinks = globifySite.table(
+export const navLinks = mysqlTable(
   'nav_links',
   {
     id: rowId().primaryKey(),
@@ -487,22 +485,22 @@ export const navLinks = globifySite.table(
  * Campaign settings — a single row, id 'default'
  * ------------------------------------------------------------------------ */
 
-export const campaignSettings = globifySite.table('campaign_settings', {
+export const campaignSettings = mysqlTable('campaign_settings', {
   id: rowId().primaryKey(),
   name: varchar('name', { length: 191 }).notNull(),
   emoji: varchar('emoji', { length: 32 }).notNull(),
-  discountPercent: integer('discount_percent').notNull(),
+  discountPercent: int('discount_percent').notNull(),
   headline: varchar('headline', { length: 500 }).notNull(),
   subheadline: text('subheadline').notNull(),
   couponCode: varchar('coupon_code', { length: 64 }).notNull(),
   timezoneOffset: varchar('timezone_offset', { length: 16 }).notNull(),
-  seatsTotal: integer('seats_total').notNull(),
-  seatsRemaining: integer('seats_remaining').notNull(),
+  seatsTotal: int('seats_total').notNull(),
+  seatsRemaining: int('seats_remaining').notNull(),
   /**
    * Explicit deadline. When null the site falls back to the rolling
    * "14 August 23:59:59 PKT of the current campaign year" rule.
    */
-  deadline: timestamp('deadline', { withTimezone: true, mode: 'date' }),
+  deadline: datetime('deadline', { mode: 'date' }),
   updatedAt,
 })
 
@@ -544,7 +542,7 @@ export type LeadChannel = (typeof LEAD_CHANNELS)[number]
  * `courseSlug` stays required because "not sure yet" is a real answer the form
  * already offers, so there is an honest value to default to.
  */
-export const leads = globifySite.table(
+export const leads = mysqlTable(
   'leads',
   {
     id: rowId().primaryKey(),
@@ -597,7 +595,7 @@ export const leads = globifySite.table(
 export const SUBSCRIBER_STATUSES = ['subscribed', 'unsubscribed'] as const
 export type SubscriberStatus = (typeof SUBSCRIBER_STATUSES)[number]
 
-export const newsletterSubscribers = globifySite.table(
+export const newsletterSubscribers = mysqlTable(
   'newsletter_subscribers',
   {
     id: rowId().primaryKey(),
@@ -634,7 +632,7 @@ export type BotChannel = (typeof BOT_CHANNELS)[number]
 export const BOT_LANGUAGES = ['en', 'ur', 'ur_roman', 'pa'] as const
 export type BotLanguage = (typeof BOT_LANGUAGES)[number]
 
-export const conversations = globifySite.table(
+export const conversations = mysqlTable(
   'conversations',
   {
     id: rowId().primaryKey(),
@@ -657,7 +655,7 @@ export const conversations = globifySite.table(
      * `{ flow, step, answers, startedAt }`. Resumed on every delivery, because
      * a webhook is a cold start and the step index cannot live in memory.
      */
-    capture: jsonb('capture').$type<Record<string, unknown> | null>(),
+    capture: json('capture').$type<Record<string, unknown> | null>(),
     /** Set when a person takes over; the bot then stays quiet on this thread. */
     handedOff: boolean('handed_off').notNull().default(false),
     createdAt,
@@ -671,7 +669,7 @@ export const conversations = globifySite.table(
   ],
 )
 
-export const conversationMessages = globifySite.table(
+export const conversationMessages = mysqlTable(
   'conversation_messages',
   {
     id: rowId().primaryKey(),
@@ -730,7 +728,7 @@ export type PortalRole = (typeof PORTAL_ROLES)[number]
 export const PORTAL_USER_STATUSES = ['active', 'suspended'] as const
 export type PortalUserStatus = (typeof PORTAL_USER_STATUSES)[number]
 
-export const portalUsers = globifySite.table(
+export const portalUsers = mysqlTable(
   'portal_users',
   {
     id: rowId().primaryKey(),
@@ -762,7 +760,7 @@ export const portalUsers = globifySite.table(
      * generated password cannot quietly become a permanent one.
      */
     mustChangePassword: boolean('must_change_password').notNull().default(false),
-    lastLoginAt: timestamp('last_login_at', { withTimezone: true, mode: 'date' }),
+    lastLoginAt: datetime('last_login_at', { mode: 'date' }),
     createdAt,
     updatedAt,
   },
@@ -778,7 +776,7 @@ export const portalUsers = globifySite.table(
 export const BATCH_STATUSES = ['upcoming', 'active', 'completed', 'cancelled'] as const
 export type BatchStatus = (typeof BATCH_STATUSES)[number]
 
-export const batches = globifySite.table(
+export const batches = mysqlTable(
   'batches',
   {
     id: rowId().primaryKey(),
@@ -805,7 +803,7 @@ export const batches = globifySite.table(
     schedule: varchar('schedule', { length: 255 }),
     mode: varchar('mode', { length: 64 }).notNull().default('On-campus'),
     /** 0 means uncapped. */
-    capacity: integer('capacity').notNull().default(0),
+    capacity: int('capacity').notNull().default(0),
     /** Standing room link for online cohorts. */
     meetingUrl: varchar('meeting_url', { length: 500 }),
     status: varchar('status', { length: 16 }).$type<BatchStatus>().notNull().default('upcoming'),
@@ -826,7 +824,7 @@ export const batches = globifySite.table(
 export const ENROLLMENT_STATUSES = ['active', 'completed', 'dropped'] as const
 export type EnrollmentStatus = (typeof ENROLLMENT_STATUSES)[number]
 
-export const enrollments = globifySite.table(
+export const enrollments = mysqlTable(
   'enrollments',
   {
     id: rowId().primaryKey(),
@@ -837,10 +835,10 @@ export const enrollments = globifySite.table(
       .$type<EnrollmentStatus>()
       .notNull()
       .default('active'),
-    enrolledAt: timestamp('enrolled_at', { withTimezone: true, mode: 'date' })
+    enrolledAt: datetime('enrolled_at', { mode: 'date' })
       .notNull()
-      .defaultNow(),
-    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+      .default(sql`CURRENT_TIMESTAMP`),
+    completedAt: datetime('completed_at', { mode: 'date' }),
     /**
      * Where the enrolment came from — `leads.id` when the admin converted an
      * enquiry, null when the student was added directly.
@@ -865,16 +863,16 @@ export const enrollments = globifySite.table(
  * still reads correctly after the curriculum is edited, and `moduleIndex` is
  * what the checklist matches on.
  */
-export const moduleProgress = globifySite.table(
+export const moduleProgress = mysqlTable(
   'module_progress',
   {
     id: rowId().primaryKey(),
     enrollmentId: varchar('enrollment_id', { length: 100 }).notNull(),
     moduleIndex: smallint('module_index').notNull(),
     moduleTitle: varchar('module_title', { length: 255 }).notNull(),
-    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' })
+    completedAt: datetime('completed_at', { mode: 'date' })
       .notNull()
-      .defaultNow(),
+      .default(sql`CURRENT_TIMESTAMP`),
     createdAt,
   },
   (table) => [
@@ -890,15 +888,15 @@ export const moduleProgress = globifySite.table(
 export const CLASS_SESSION_STATUSES = ['scheduled', 'held', 'cancelled'] as const
 export type ClassSessionStatus = (typeof CLASS_SESSION_STATUSES)[number]
 
-export const classSessions = globifySite.table(
+export const classSessions = mysqlTable(
   'class_sessions',
   {
     id: rowId().primaryKey(),
     batchId: varchar('batch_id', { length: 100 }).notNull(),
     title: varchar('title', { length: 255 }).notNull(),
     topic: text('topic'),
-    scheduledAt: timestamp('scheduled_at', { withTimezone: true, mode: 'date' }).notNull(),
-    durationMinutes: integer('duration_minutes').notNull().default(120),
+    scheduledAt: datetime('scheduled_at', { mode: 'date' }).notNull(),
+    durationMinutes: int('duration_minutes').notNull().default(120),
     meetingUrl: varchar('meeting_url', { length: 500 }),
     recordingUrl: varchar('recording_url', { length: 500 }),
     status: varchar('status', { length: 16 })
@@ -906,7 +904,7 @@ export const classSessions = globifySite.table(
       .notNull()
       .default('scheduled'),
     /** Set the first time attendance is saved — drives the "unmarked" list. */
-    attendanceMarkedAt: timestamp('attendance_marked_at', {
+    attendanceMarkedAt: datetime('attendance_marked_at', {
       withTimezone: true,
       mode: 'date',
     }),
@@ -922,7 +920,7 @@ export const classSessions = globifySite.table(
 export const ATTENDANCE_STATUSES = ['present', 'absent', 'late', 'excused'] as const
 export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number]
 
-export const attendance = globifySite.table(
+export const attendance = mysqlTable(
   'attendance',
   {
     id: rowId().primaryKey(),
@@ -949,7 +947,7 @@ export const attendance = globifySite.table(
 export const MATERIAL_TYPES = ['link', 'file', 'video', 'note'] as const
 export type MaterialType = (typeof MATERIAL_TYPES)[number]
 
-export const materials = globifySite.table(
+export const materials = mysqlTable(
   'materials',
   {
     id: rowId().primaryKey(),
@@ -970,7 +968,7 @@ export const materials = globifySite.table(
   (table) => [index('materials_batch_idx').on(table.batchId, table.sortOrder)],
 )
 
-export const announcements = globifySite.table(
+export const announcements = mysqlTable(
   'announcements',
   {
     id: rowId().primaryKey(),
@@ -992,7 +990,7 @@ export const announcements = globifySite.table(
 
 /* ------------------------------------------------- Assignments and marking */
 
-export const assignments = globifySite.table(
+export const assignments = mysqlTable(
   'assignments',
   {
     id: rowId().primaryKey(),
@@ -1001,13 +999,13 @@ export const assignments = globifySite.table(
     brief: text('brief').notNull(),
     /** Reference material the brief points at — a repo, a spec, a dataset. */
     attachmentUrl: varchar('attachment_url', { length: 500 }),
-    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }).notNull(),
-    maxScore: integer('max_score').notNull().default(100),
+    dueAt: datetime('due_at', { mode: 'date' }).notNull(),
+    maxScore: int('max_score').notNull().default(100),
     /** Counts toward the final grade at this weight; 0 excludes it. */
-    weight: integer('weight').notNull().default(1),
+    weight: int('weight').notNull().default(1),
     allowLate: boolean('allow_late').notNull().default(true),
     /** Null while it is a draft — students never see an unpublished row. */
-    publishedAt: timestamp('published_at', { withTimezone: true, mode: 'date' }),
+    publishedAt: datetime('published_at', { mode: 'date' }),
     createdById: varchar('created_by_id', { length: 100 }).notNull(),
     createdAt,
     updatedAt,
@@ -1021,7 +1019,7 @@ export const assignments = globifySite.table(
 export const SUBMISSION_STATUSES = ['submitted', 'graded', 'resubmit'] as const
 export type SubmissionStatus = (typeof SUBMISSION_STATUSES)[number]
 
-export const submissions = globifySite.table(
+export const submissions = mysqlTable(
   'submissions',
   {
     id: rowId().primaryKey(),
@@ -1036,19 +1034,19 @@ export const submissions = globifySite.table(
       .$type<SubmissionStatus>()
       .notNull()
       .default('submitted'),
-    submittedAt: timestamp('submitted_at', { withTimezone: true, mode: 'date' })
+    submittedAt: datetime('submitted_at', { mode: 'date' })
       .notNull()
-      .defaultNow(),
+      .default(sql`CURRENT_TIMESTAMP`),
     /**
      * Recorded at submission time rather than compared on read: `due_at` can be
      * extended after the fact, and a hand-in that *was* late should not
      * silently become punctual because the deadline moved.
      */
     late: boolean('late').notNull().default(false),
-    score: integer('score'),
+    score: int('score'),
     feedback: text('feedback'),
     gradedById: varchar('graded_by_id', { length: 100 }),
-    gradedAt: timestamp('graded_at', { withTimezone: true, mode: 'date' }),
+    gradedAt: datetime('graded_at', { mode: 'date' }),
     createdAt,
     updatedAt,
   },
@@ -1080,22 +1078,22 @@ export type QuizQuestion = {
 /** One answer in an attempt. `selectedIndex` is null when left blank. */
 export type QuizAnswer = { questionId: string; selectedIndex: number | null }
 
-export const quizzes = globifySite.table(
+export const quizzes = mysqlTable(
   'quizzes',
   {
     id: rowId().primaryKey(),
     batchId: varchar('batch_id', { length: 100 }).notNull(),
     title: varchar('title', { length: 255 }).notNull(),
     description: text('description'),
-    questions: jsonb('questions').$type<QuizQuestion[]>().notNull(),
+    questions: json('questions').$type<QuizQuestion[]>().notNull(),
     /** 0 means untimed. */
-    timeLimitMinutes: integer('time_limit_minutes').notNull().default(0),
-    maxAttempts: integer('max_attempts').notNull().default(1),
+    timeLimitMinutes: int('time_limit_minutes').notNull().default(0),
+    maxAttempts: int('max_attempts').notNull().default(1),
     /** Percentage needed to pass. */
-    passScore: integer('pass_score').notNull().default(60),
-    weight: integer('weight').notNull().default(1),
-    dueAt: timestamp('due_at', { withTimezone: true, mode: 'date' }),
-    publishedAt: timestamp('published_at', { withTimezone: true, mode: 'date' }),
+    passScore: int('pass_score').notNull().default(60),
+    weight: int('weight').notNull().default(1),
+    dueAt: datetime('due_at', { mode: 'date' }),
+    publishedAt: datetime('published_at', { mode: 'date' }),
     createdById: varchar('created_by_id', { length: 100 }).notNull(),
     createdAt,
     updatedAt,
@@ -1106,7 +1104,7 @@ export const quizzes = globifySite.table(
   ],
 )
 
-export const quizAttempts = globifySite.table(
+export const quizAttempts = mysqlTable(
   'quiz_attempts',
   {
     id: rowId().primaryKey(),
@@ -1115,13 +1113,13 @@ export const quizAttempts = globifySite.table(
     studentId: varchar('student_id', { length: 100 }).notNull(),
     /** 1-based, so `attempt_number = max_attempts` is the last one allowed. */
     attemptNumber: smallint('attempt_number').notNull().default(1),
-    answers: jsonb('answers').$type<QuizAnswer[]>().notNull(),
-    score: integer('score').notNull().default(0),
-    maxScore: integer('max_score').notNull().default(0),
-    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' })
+    answers: json('answers').$type<QuizAnswer[]>().notNull(),
+    score: int('score').notNull().default(0),
+    maxScore: int('max_score').notNull().default(0),
+    startedAt: datetime('started_at', { mode: 'date' })
       .notNull()
-      .defaultNow(),
-    submittedAt: timestamp('submitted_at', { withTimezone: true, mode: 'date' }),
+      .default(sql`CURRENT_TIMESTAMP`),
+    submittedAt: datetime('submitted_at', { mode: 'date' }),
     createdAt,
     updatedAt,
   },
@@ -1137,7 +1135,7 @@ export const quizAttempts = globifySite.table(
 
 /* ------------------------------------------------------------- Certificates */
 
-export const certificates = globifySite.table(
+export const certificates = mysqlTable(
   'certificates',
   {
     id: rowId().primaryKey(),
@@ -1153,11 +1151,11 @@ export const certificates = globifySite.table(
     studentName: varchar('student_name', { length: 191 }).notNull(),
     courseTitle: varchar('course_title', { length: 255 }).notNull(),
     /** The computed grade at the moment of issue, frozen. */
-    finalScore: integer('final_score'),
+    finalScore: int('final_score'),
     grade: varchar('grade', { length: 16 }),
-    issuedAt: timestamp('issued_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    issuedAt: datetime('issued_at', { mode: 'date' }).notNull().default(sql`CURRENT_TIMESTAMP`),
     issuedById: varchar('issued_by_id', { length: 100 }).notNull(),
-    revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
+    revokedAt: datetime('revoked_at', { mode: 'date' }),
     createdAt,
     updatedAt,
   },
@@ -1224,7 +1222,7 @@ export type BroadcastAudience = {
   manual?: string[]
 }
 
-export const broadcasts = globifySite.table(
+export const broadcasts = mysqlTable(
   'broadcasts',
   {
     id: rowId().primaryKey(),
@@ -1245,7 +1243,7 @@ export const broadcasts = globifySite.table(
      * order. Each may itself contain a merge token (`{name}`, `{course}`)
      * resolved per recipient at send time.
      */
-    templateVariables: jsonb('template_variables').$type<string[]>().notNull().default([]),
+    templateVariables: json('template_variables').$type<string[]>().notNull().default([]),
     /** Fills a template whose header is an image. Must be a public https URL. */
     headerImageUrl: varchar('header_image_url', { length: 500 }),
     /**
@@ -1260,11 +1258,11 @@ export const broadcasts = globifySite.table(
     /** The message for `kind = 'text'`; a copy of the approved body otherwise. */
     body: text('body'),
 
-    audience: jsonb('audience').$type<BroadcastAudience>(),
+    audience: json('audience').$type<BroadcastAudience>(),
     /** Set when the admin schedules rather than sends; the cron route picks it up. */
-    scheduledFor: timestamp('scheduled_for', { withTimezone: true, mode: 'date' }),
-    startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
-    completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
+    scheduledFor: datetime('scheduled_for', { mode: 'date' }),
+    startedAt: datetime('started_at', { mode: 'date' }),
+    completedAt: datetime('completed_at', { mode: 'date' }),
     /** The failure that stopped the whole run, as opposed to one recipient's. */
     lastError: text('last_error'),
     createdBy: varchar('created_by', { length: 191 }),
@@ -1313,7 +1311,7 @@ export type BroadcastRecipientStatus = (typeof BROADCAST_RECIPIENT_STATUSES)[num
 export const BROADCAST_DELIVERY_STATUSES = ['sent', 'delivered', 'read', 'failed'] as const
 export type BroadcastDeliveryStatus = (typeof BROADCAST_DELIVERY_STATUSES)[number]
 
-export const broadcastRecipients = globifySite.table(
+export const broadcastRecipients = mysqlTable(
   'broadcast_recipients',
   {
     id: rowId().primaryKey(),
@@ -1334,7 +1332,7 @@ export const broadcastRecipients = globifySite.table(
     messageId: varchar('message_id', { length: 191 }),
     deliveryStatus: varchar('delivery_status', { length: 16 }).$type<BroadcastDeliveryStatus>(),
     error: text('error'),
-    sentAt: timestamp('sent_at', { withTimezone: true, mode: 'date' }),
+    sentAt: datetime('sent_at', { mode: 'date' }),
     createdAt,
     updatedAt,
   },
@@ -1360,7 +1358,7 @@ export const broadcastRecipients = globifySite.table(
  * for a scheduled broadcast can be hours old, and someone who says STOP in
  * those hours has said it in time.
  */
-export const whatsappOptOuts = globifySite.table(
+export const whatsappOptOuts = mysqlTable(
   'whatsapp_opt_outs',
   {
     id: rowId().primaryKey(),

@@ -18,35 +18,27 @@ loadEnv({ path: '.env' })
  * Migrations run against `DIRECT_URL` when it is set, and `DATABASE_URL`
  * otherwise.
  *
- * Supabase publishes two connection strings, and the difference matters here.
- * The app uses the transaction pooler (port 6543), which multiplexes many short
- * connections onto few server ones — exactly right for serverless request
- * handlers, but it cannot hold session state, so it rejects the advisory locks
- * and prepared statements DDL relies on. Migrations therefore want the direct
- * or session-mode connection (port 5432).
+ * Under Supabase these were genuinely different endpoints — DDL cannot run
+ * through a transaction pooler. MySQL is reached directly, so the two are
+ * normally the same string; the override is kept because the database is
+ * reachable on `127.0.0.1` from the server but only through whatever host
+ * Remote MySQL exposes from anywhere else, and a migration run from a laptop
+ * therefore needs a different URL from the one the app uses.
  *
- * Falling back keeps a single-URL setup working: point both at 5432 and
- * everything runs, just without the pooler's connection reuse.
+ * There is no `schemaFilter` any more. Under Postgres it was a blast-radius
+ * guard, scoping drizzle-kit to `globify_site` so a `push` could not propose
+ * dropping another application's tables out of `public`. MySQL has no schema
+ * inside a database — the database *is* the namespace — so the equivalent
+ * protection is simply that DATABASE_URL names a database this app owns
+ * outright. Never point it at one shared with anything else.
  */
 export default defineConfig({
   schema: './src/db/schema.ts',
-  out: './drizzle/pg',
-  dialect: 'postgresql',
+  out: './drizzle/mysql',
+  dialect: 'mysql',
   dbCredentials: {
     url: process.env.DIRECT_URL?.trim() || process.env.DATABASE_URL?.trim() || '',
   },
-  /*
-   * The blast-radius guard, and the reason it is not `public`.
-   *
-   * This Supabase project is shared: `public` belongs to the AI assistant's
-   * Prisma schema (33 tables, live data) and `auth`/`storage`/`realtime` belong
-   * to Supabase itself. drizzle-kit treats every table it can see but does not
-   * find in `schema.ts` as drift, and offers to drop it — so pointed at
-   * `public` a routine `push` would propose deleting another application's
-   * database. Scoping it to the one schema this app owns makes that impossible
-   * rather than merely unlikely.
-   */
-  schemaFilter: ['globify_site'],
   strict: true,
   verbose: true,
 })
