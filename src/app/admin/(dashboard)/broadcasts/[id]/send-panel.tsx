@@ -2,15 +2,13 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Ban, Loader2, PauseCircle, RefreshCw, RotateCcw, Send, Users } from 'lucide-react'
+import { Ban, Loader2, PauseCircle, RotateCcw, Send } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input, Label } from '@/components/ui/field'
 import { toast } from '@/components/ui/toaster'
 import type { BroadcastStatus } from '@/db/schema'
 import type { ActionResult, DataResult } from '@/lib/admin/guard'
-import type { AudienceResult } from '@/lib/data/broadcasts'
 import type { SliceResult } from '@/lib/whatsapp/runner'
 
 /**
@@ -25,6 +23,10 @@ import type { SliceResult } from '@/lib/whatsapp/runner'
  * Closing the tab is therefore safe but slower: the cron route picks up
  * whatever is left. Nothing is lost either way, because the queue is the state
  * and neither driver holds anything the other cannot claim.
+ *
+ * There is no compose control here any more. A broadcast is created by the send
+ * itself, so by the time this screen exists the message and the recipient list
+ * are both settled — what is left is watching it happen, and stopping it.
  */
 export function SendPanel({
   id,
@@ -38,22 +40,18 @@ export function SendPanel({
   status: BroadcastStatus
   queued: number
   failed: number
-  /** False when the WhatsApp credentials are missing — send is not offered. */
+  /** False when the WhatsApp credentials are missing — resuming is not offered. */
   canSend: boolean
   actions: {
-    start: (id: string) => Promise<ActionResult>
+    resume: (id: string) => Promise<ActionResult>
     pause: (id: string) => Promise<ActionResult>
     cancel: (id: string) => Promise<ActionResult>
     run: (id: string) => Promise<DataResult<SliceResult>>
     retryFailed: (id: string) => Promise<DataResult<number>>
-    rebuildAudience: (id: string) => Promise<DataResult<AudienceResult>>
-    sendTest: (id: string, phone: string) => Promise<ActionResult>
   }
 }) {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
-  const [testPhone, setTestPhone] = React.useState('')
-  const [testing, setTesting] = React.useState(false)
 
   /* Guards the pump against being started twice. `router.refresh()` re-renders
      this component on every slice, and without this each render that still saw
@@ -125,158 +123,81 @@ export function SendPanel({
     })
   }
 
-  async function onTest() {
-    if (!testPhone.trim()) return
-
-    setTesting(true)
-    const result = await actions.sendTest(id, testPhone)
-    setTesting(false)
-
-    if (!result.ok) {
-      toast.error('Test message failed', { description: result.error })
-      return
-    }
-    toast.success('Test sent', { description: `Check WhatsApp on ${testPhone}.` })
-  }
-
   const sending = status === 'sending'
   const finished = status === 'completed' || status === 'cancelled'
 
+  // Nothing left to control: a finished send with no failures to retry.
+  if (finished && failed === 0) return null
+
   return (
-    <Card className="grid gap-5 p-6">
-      <div className="flex flex-wrap items-center gap-2">
-        {!sending && !finished && (
-          <Button
-            variant="primary"
-            size="md"
-            disabled={pending || !canSend || queued === 0}
-            onClick={() => run('start the broadcast', actions.start)}
-          >
-            {pending ? <Loader2 aria-hidden className="animate-spin" /> : <Send aria-hidden />}
-            {status === 'paused' ? 'Resume sending' : `Send to ${queued} recipients`}
-          </Button>
-        )}
-
-        {sending && (
-          <>
-            <span className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 font-sans text-sm font-semibold text-emerald-800">
-              <Loader2 aria-hidden className="size-4 animate-spin" />
-              Sending — {queued} to go
-            </span>
-            <Button
-              variant="secondary"
-              size="md"
-              disabled={pending}
-              onClick={() => run('pause the broadcast', actions.pause)}
-            >
-              <PauseCircle aria-hidden />
-              Pause
-            </Button>
-          </>
-        )}
-
-        {failed > 0 && !sending && (
+    <Card className="flex flex-wrap items-center gap-2 p-6">
+      {sending && (
+        <>
+          <span className="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-2.5 font-sans text-sm font-semibold text-emerald-800">
+            <Loader2 aria-hidden className="size-4 animate-spin" />
+            Sending — {queued} to go
+          </span>
           <Button
             variant="secondary"
             size="md"
             disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await actions.retryFailed(id)
-                if (!result.ok) {
-                  toast.error('Could not retry', { description: result.error })
-                  return
-                }
-                toast.success(`${result.data} recipients queued again`)
-                router.refresh()
-              })
-            }
+            onClick={() => run('pause the broadcast', actions.pause)}
           >
-            <RotateCcw aria-hidden />
-            Retry {failed} failed
+            <PauseCircle aria-hidden />
+            Pause
           </Button>
-        )}
+        </>
+      )}
 
-        {!sending && !finished && (
-          <Button
-            variant="ghost"
-            size="md"
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await actions.rebuildAudience(id)
-                if (!result.ok) {
-                  toast.error('Could not rebuild the audience', { description: result.error })
-                  return
-                }
-                toast.success(`${result.data.added} recipients`, {
-                  description:
-                    result.data.optedOut > 0
-                      ? `${result.data.optedOut} were skipped for having opted out.`
-                      : 'The list now matches the saved filters.',
-                })
-                router.refresh()
-              })
-            }
-          >
-            <Users aria-hidden />
-            Rebuild audience
-          </Button>
-        )}
+      {!sending && !finished && (
+        <Button
+          variant="primary"
+          size="md"
+          disabled={pending || !canSend || queued === 0}
+          onClick={() => run('start the broadcast', actions.resume)}
+        >
+          {pending ? <Loader2 aria-hidden className="animate-spin" /> : <Send aria-hidden />}
+          {status === 'paused' ? `Resume — ${queued} to go` : `Send now to ${queued}`}
+        </Button>
+      )}
 
-        {!finished && (
-          <Button
-            variant="ghost"
-            size="md"
-            disabled={pending}
-            className="text-ink-500 hover:bg-red-50 hover:text-red-600"
-            onClick={() => run('cancel the broadcast', actions.cancel)}
-          >
-            <Ban aria-hidden />
-            Cancel
-          </Button>
-        )}
+      {failed > 0 && !sending && (
+        <Button
+          variant="secondary"
+          size="md"
+          disabled={pending}
+          onClick={() =>
+            startTransition(async () => {
+              const result = await actions.retryFailed(id)
+              if (!result.ok) {
+                toast.error('Could not retry', { description: result.error })
+                return
+              }
+              toast.success(`${result.data} recipients queued again`)
+              router.refresh()
+            })
+          }
+        >
+          <RotateCcw aria-hidden />
+          Retry {failed} failed
+        </Button>
+      )}
 
-        {finished && status === 'completed' && (
-          <Button variant="ghost" size="md" onClick={() => router.refresh()}>
-            <RefreshCw aria-hidden />
-            Refresh delivery report
-          </Button>
-        )}
-      </div>
-
-      {/* ---------------------------------------------------------- Test send */}
-      {!finished && canSend && (
-        <div className="border-t border-hairline pt-5">
-          <Label htmlFor="test-phone">Send yourself a test first</Label>
-          <p className="mt-1 mb-3 font-sans text-[0.8125rem] text-ink-500">
-            Goes straight to one number without touching the queue or the delivery report. The only
-            way to see the header, footer and buttons Meta holds for the template.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Input
-              id="test-phone"
-              type="tel"
-              value={testPhone}
-              onChange={(event) => setTestPhone(event.target.value)}
-              placeholder="0300 1234567"
-              className="h-11 max-w-xs"
-            />
-            <Button
-              variant="secondary"
-              size="md"
-              disabled={testing || !testPhone.trim()}
-              onClick={onTest}
-            >
-              {testing ? <Loader2 aria-hidden className="animate-spin" /> : <Send aria-hidden />}
-              Send test
-            </Button>
-          </div>
-        </div>
+      {!finished && (
+        <Button
+          variant="ghost"
+          size="md"
+          disabled={pending}
+          className="text-ink-500 hover:bg-red-50 hover:text-red-600"
+          onClick={() => run('cancel the broadcast', actions.cancel)}
+        >
+          <Ban aria-hidden />
+          Cancel
+        </Button>
       )}
 
       {!canSend && (
-        <p className="rounded-xl border border-gold-300/70 bg-gold-50 p-4 font-sans text-[0.875rem] text-gold-900">
+        <p className="w-full rounded-xl border border-gold-300/70 bg-gold-50 p-4 font-sans text-[0.875rem] text-gold-900">
           Sending is disabled until <code className="font-mono">WHATSAPP_PHONE_ID</code> and{' '}
           <code className="font-mono">WHATSAPP_TOKEN</code> are set in the environment.
         </p>

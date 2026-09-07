@@ -5,7 +5,6 @@ import {
   claimRecipients,
   countRecipients,
   getBroadcast,
-  lastInboundAt,
   markRecipientFailed,
   markRecipientSent,
   markRecipientSkipped,
@@ -16,7 +15,7 @@ import {
 } from '@/lib/data/broadcasts'
 
 import { applyMergeFields } from './format'
-import { canSendWhatsApp, sendText, sendTemplate } from './send'
+import { canSendWhatsApp, sendTemplate } from './send'
 
 /**
  * ---------------------------------------------------------------------------
@@ -67,8 +66,21 @@ const MAX_ATTEMPTS = 3
 /** How long one slice may run before returning. Well under any host's limit. */
 const DEFAULT_BUDGET_MS = 20_000
 
-/** Free text is only deliverable within this of the recipient's own message. */
-const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000
+/**
+ * Everything sending one message needs.
+ *
+ * Narrower than `BroadcastRow` on purpose: a test send happens from the compose
+ * screen, before any row exists, and taking the message rather than the record
+ * is what lets the queue and the test go down the same code path. A test that
+ * renders through a second implementation is a test of the wrong thing.
+ */
+export type ComposedMessage = {
+  templateName?: string | null
+  templateLanguage?: string | null
+  templateVariables?: string[] | null
+  headerParameter?: string | null
+  headerImageUrl?: string | null
+}
 
 export type SliceResult = {
   sent: number
@@ -174,11 +186,6 @@ async function sendBatch(
      those hours has opted out in time to matter. */
   const suppressed = await optedOutPhones(phones)
 
-  /* Only free text needs the window, and asking for it costs a query, so it is
-     not asked for when sending a template. */
-  const windowByPhone =
-    broadcast.kind === 'text' ? await lastInboundAt(phones) : new Map<string, Date>()
-
   const gapMs = Math.max(0, Math.round(1000 / Math.max(1, MESSAGES_PER_SECOND)))
 
   for (const recipient of batch) {
@@ -186,26 +193,6 @@ async function sendBatch(
       await markRecipientSkipped(recipient.id, 'Opted out of WhatsApp messages.')
       result.skipped++
       continue
-    }
-
-    if (broadcast.kind === 'text') {
-      const lastInbound = windowByPhone.get(recipient.phone)
-      const insideWindow =
-        lastInbound && Date.now() - lastInbound.getTime() < CUSTOMER_SERVICE_WINDOW_MS
-
-      if (!insideWindow) {
-        /* Skipped, not failed. Nothing was wrong with the number and nothing
-           was attempted — the message simply could not legally be free text.
-           Recording it as a failure would suggest a retry might work. */
-        await markRecipientSkipped(
-          recipient.id,
-          lastInbound
-            ? 'Last replied more than 24 hours ago — free text cannot be delivered. Use a template.'
-            : 'Has never messaged this number — free text cannot be delivered. Use a template.',
-        )
-        result.skipped++
-        continue
-      }
     }
 
     const outcome = await send(broadcast, recipient)
@@ -226,23 +213,19 @@ async function sendBatch(
   }
 }
 
-function send(broadcast: BroadcastRow, recipient: ClaimedRecipient) {
+function send(message: ComposedMessage, recipient: ClaimedRecipient) {
   const context = { name: recipient.name, courseTitle: recipient.courseTitle }
 
-  if (broadcast.kind === 'text') {
-    return sendText(recipient.phone, applyMergeFields(broadcast.body ?? '', context))
-  }
-
   return sendTemplate(recipient.phone, {
-    name: broadcast.templateName ?? '',
-    language: broadcast.templateLanguage ?? 'en_US',
-    bodyParameters: (broadcast.templateVariables ?? []).map((value) =>
+    name: message.templateName ?? '',
+    language: message.templateLanguage ?? 'en_US',
+    bodyParameters: (message.templateVariables ?? []).map((value) =>
       applyMergeFields(value, context),
     ),
-    headerParameter: broadcast.headerParameter
-      ? applyMergeFields(broadcast.headerParameter, context)
+    headerParameter: message.headerParameter
+      ? applyMergeFields(message.headerParameter, context)
       : undefined,
-    headerImageUrl: broadcast.headerImageUrl,
+    headerImageUrl: message.headerImageUrl,
   })
 }
 
@@ -255,20 +238,21 @@ function sleep(ms: number): Promise<void> {
  * ------------------------------------------------------------------------ */
 
 /**
- * Send this exact broadcast to one number, without touching the queue.
+ * Send this exact message to one number, without touching the queue.
  *
  * The single most useful thing in the whole feature. A template renders
  * differently from how it reads in the compose form — the header, the footer
  * and the buttons are all held by Meta and never appear in the draft — so the
  * only way to know what four hundred people are about to receive is to receive
- * it once first.
+ * it once first. Takes the composed message rather than a saved row, so it can
+ * be used before the broadcast exists.
  */
 export async function sendTestMessage(
-  broadcast: BroadcastRow,
+  message: ComposedMessage,
   phone: string,
   context: { name?: string | null; courseTitle?: string | null } = {},
 ) {
-  return send(broadcast, {
+  return send(message, {
     id: 'test',
     phone,
     name: context.name ?? 'Test recipient',

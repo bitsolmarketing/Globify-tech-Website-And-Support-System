@@ -55,7 +55,7 @@ export default async function AdminBroadcastsPage() {
     <>
       <AdminPageHeader
         title="WhatsApp broadcasts"
-        description="Announce a new batch, a fee deadline or a results day to everyone at once — with an approved template, and never to anyone who has opted out."
+        description="Announce a new batch, a fee deadline or a results day to everyone at once. Every send that has gone out is listed here; composing a new one is a single screen."
         actions={
           <>
             <Button asChild variant="secondary" size="md">
@@ -98,7 +98,7 @@ export default async function AdminBroadcastsPage() {
       {broadcasts.length === 0 ? (
         <EmptyState
           title="No broadcasts yet"
-          description="A broadcast goes to people who are not currently in a conversation, so it needs a template Meta has approved. Compose one, review exactly who it will reach, then send."
+          description="A broadcast goes to people who are not currently in a conversation, so it needs a template Meta has approved. Pick one, pick who it reaches — the count is live — and send."
           action={
             <Button asChild variant="primary" size="md">
               <Link href="/admin/broadcasts/new">
@@ -141,9 +141,7 @@ export default async function AdminBroadcastsPage() {
 
                   <Td className="hidden md:table-cell">
                     <Badge variant="neutral" size="md">
-                      {broadcast.kind === 'template'
-                        ? (broadcast.templateName ?? 'Template')
-                        : 'Free text'}
+                      {broadcast.templateName ?? 'Template'}
                     </Badge>
                   </Td>
 
