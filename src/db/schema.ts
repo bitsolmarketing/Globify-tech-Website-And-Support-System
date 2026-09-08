@@ -904,10 +904,10 @@ export const classSessions = mysqlTable(
       .notNull()
       .default('scheduled'),
     /** Set the first time attendance is saved — drives the "unmarked" list. */
-    attendanceMarkedAt: datetime('attendance_marked_at', {
-      withTimezone: true,
-      mode: 'date',
-    }),
+    /* No `withTimezone`: MySQL's DATETIME has no timezone-aware variant. The
+       pool pins every connection to UTC instead, which is what keeps this an
+       absolute instant rather than "whatever the server's clock said". */
+    attendanceMarkedAt: datetime('attendance_marked_at', { mode: 'date' }),
     createdAt,
     updatedAt,
   },

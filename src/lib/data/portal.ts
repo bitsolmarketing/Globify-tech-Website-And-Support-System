@@ -71,24 +71,29 @@ export type NewPortalUser = {
 }
 
 export async function createPortalUser(input: NewPortalUser): Promise<PortalUserRow> {
-  const [row] = await getDb()
-    .insert(portalUsers)
-    .values({
-      id: randomUUID(),
-      /* Lower-cased here and in `authorize`, because Postgres compares text
-         exactly and the unique index would otherwise let the same person
-         register twice with a capital letter. */
-      email: input.email.trim().toLowerCase(),
-      name: input.name.trim(),
-      role: input.role,
-      passwordHash: await hashPassword(input.password),
-      phone: input.phone?.trim() || null,
-      headline: input.headline?.trim() || null,
-      bio: input.bio?.trim() || null,
-      authorSlug: input.authorSlug?.trim() || null,
-      mustChangePassword: input.mustChangePassword ?? false,
-    })
-    .returning()
+  /* MySQL has no RETURNING, so the stored row — with the defaults and
+     timestamps the insert did not supply — is read back by the id generated
+     here. Two round trips instead of one, which is the price of the dialect. */
+  const db = getDb()
+  const id = randomUUID()
+
+  await db.insert(portalUsers).values({
+    id,
+    /* Lower-cased here and in `authorize` so the address stored is the one
+       looked up. MySQL's utf8mb4_unicode_ci makes the unique index
+       case-insensitive anyway, but the sign-in path must not depend on that. */
+    email: input.email.trim().toLowerCase(),
+    name: input.name.trim(),
+    role: input.role,
+    passwordHash: await hashPassword(input.password),
+    phone: input.phone?.trim() || null,
+    headline: input.headline?.trim() || null,
+    bio: input.bio?.trim() || null,
+    authorSlug: input.authorSlug?.trim() || null,
+    mustChangePassword: input.mustChangePassword ?? false,
+  })
+
+  const [row] = await db.select().from(portalUsers).where(eq(portalUsers.id, id)).limit(1)
 
   return row
 }
@@ -274,18 +279,20 @@ export type NewBatch = {
 }
 
 export async function createBatch(input: NewBatch): Promise<BatchRow> {
-  const [row] = await getDb()
-    .insert(batches)
-    .values({
-      id: randomUUID(),
-      ...input,
-      code: input.code.trim().toUpperCase(),
-      endDate: input.endDate || null,
-      schedule: input.schedule?.trim() || null,
-      meetingUrl: input.meetingUrl?.trim() || null,
-      notes: input.notes?.trim() || null,
-    })
-    .returning()
+  const db = getDb()
+  const id = randomUUID()
+
+  await db.insert(batches).values({
+    id,
+    ...input,
+    code: input.code.trim().toUpperCase(),
+    endDate: input.endDate || null,
+    schedule: input.schedule?.trim() || null,
+    meetingUrl: input.meetingUrl?.trim() || null,
+    notes: input.notes?.trim() || null,
+  })
+
+  const [row] = await db.select().from(batches).where(eq(batches.id, id)).limit(1)
 
   return row
 }
@@ -378,8 +385,9 @@ export async function enrollStudent(input: {
       studentId: input.studentId,
       leadId: input.leadId ?? null,
     })
-    .onConflictDoUpdate({
-      target: [enrollments.batchId, enrollments.studentId],
+    /* Keyed by `enrollments_batch_student_key`. Re-enrolling someone who
+       withdrew reactivates the row they already have rather than failing. */
+    .onDuplicateKeyUpdate({
       set: { status: 'active', completedAt: null, updatedAt: sql`now()` },
     })
 }

@@ -681,7 +681,7 @@ async function main() {
   }
 
   const db = getDb()
-  console.info('\nSeeding Globify content into Postgres…\n')
+  console.info('\nSeeding Globify content into MySQL…\n')
 
   await seedCourses(db)
   await seedAuthors(db)

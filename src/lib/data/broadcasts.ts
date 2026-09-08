@@ -53,24 +53,29 @@ export type BroadcastInput = {
 }
 
 export async function createBroadcast(input: BroadcastInput): Promise<BroadcastRow> {
-  const [row] = await getDb()
-    .insert(broadcasts)
-    .values({
-      id: randomUUID(),
-      name: input.name,
-      kind: input.kind,
-      status: input.scheduledFor ? 'scheduled' : 'draft',
-      templateName: input.templateName ?? null,
-      templateLanguage: input.templateLanguage ?? 'en_US',
-      templateVariables: input.templateVariables ?? [],
-      headerParameter: input.headerParameter ?? null,
-      headerImageUrl: input.headerImageUrl ?? null,
-      body: input.body ?? null,
-      audience: input.audience,
-      scheduledFor: input.scheduledFor ?? null,
-      createdBy: input.createdBy ?? null,
-    })
-    .returning()
+  /* MySQL has no RETURNING, so the stored row — with the defaults and
+     timestamps the insert did not supply — is read back by the id generated
+     here. Two round trips instead of one, which is the price of the dialect. */
+  const db = getDb()
+  const id = randomUUID()
+
+  await db.insert(broadcasts).values({
+    id,
+    name: input.name,
+    kind: input.kind,
+    status: input.scheduledFor ? 'scheduled' : 'draft',
+    templateName: input.templateName ?? null,
+    templateLanguage: input.templateLanguage ?? 'en_US',
+    templateVariables: input.templateVariables ?? [],
+    headerParameter: input.headerParameter ?? null,
+    headerImageUrl: input.headerImageUrl ?? null,
+    body: input.body ?? null,
+    audience: input.audience,
+    scheduledFor: input.scheduledFor ?? null,
+    createdBy: input.createdBy ?? null,
+  })
+
+  const [row] = await db.select().from(broadcasts).where(eq(broadcasts.id, id)).limit(1)
 
   return row
 }
@@ -350,10 +355,11 @@ export async function rebuildRecipients(
           leadId: candidate.leadId,
         })),
       )
-      /* The unique index is the real dedupe. This makes a repeat harmless
-         rather than fatal — two admins pressing "rebuild" at once is a
-         collision, not an error worth surfacing. */
-      .onConflictDoNothing()
+      /* `broadcast_recipients_broadcast_phone_key` is the real dedupe. Setting
+         a column to itself is MySQL's way of spelling "do nothing", which makes
+         a repeat harmless rather than fatal — two admins pressing "rebuild" at
+         once is a collision, not an error worth surfacing. */
+      .onDuplicateKeyUpdate({ set: { id: sql`id` } })
   }
 
   return {
@@ -686,7 +692,9 @@ export async function recordOptOut(
   await getDb()
     .insert(whatsappOptOuts)
     .values({ id: randomUUID(), phone: normalised, reason: reason.slice(0, 191), source })
-    .onConflictDoNothing({ target: whatsappOptOuts.phone })
+    /* Already opted out is the expected case, not an error: keep the original
+       row and the date it carries rather than overwriting either. */
+    .onDuplicateKeyUpdate({ set: { id: sql`id` } })
 }
 
 export async function removeOptOut(phone: string): Promise<void> {
