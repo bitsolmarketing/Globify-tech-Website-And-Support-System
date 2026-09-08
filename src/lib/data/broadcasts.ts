@@ -2,7 +2,7 @@ import 'server-only'
 
 import { randomUUID } from 'node:crypto'
 
-import { and, count, desc, eq, gte, inArray, isNotNull, lte, sql, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, isNotNull, lt, lte, sql, type SQL } from 'drizzle-orm'
 
 import { getDb } from '@/db'
 import {
@@ -466,28 +466,65 @@ export async function claimRecipients(
   limit: number,
   maxAttempts: number,
 ): Promise<ClaimedRecipient[]> {
-  /* Written out rather than built with the query builder: Drizzle has no
-     expression for `FOR UPDATE SKIP LOCKED` inside an `UPDATE … WHERE id IN
-     (SELECT …)`, and that clause is the entire safety property here. Column
-     names are unqualified so they resolve to the subquery's own scope. */
-  const rows = await getDb().execute<ClaimedRecipient>(sql`
-    UPDATE ${broadcastRecipients}
-    SET status = 'sending',
-        attempts = attempts + 1,
-        updated_at = now()
-    WHERE id IN (
-      SELECT id FROM ${broadcastRecipients}
-      WHERE broadcast_id = ${broadcastId}
-        AND status = 'queued'
-        AND attempts < ${maxAttempts}
-      ORDER BY created_at
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING id, phone, name, course_title AS "courseTitle", attempts
-  `)
+  /**
+   * Three statements in a transaction, where Postgres did it in one.
+   *
+   * The original was `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)
+   * RETURNING …`. MySQL rejects that shape outright — error 1093, "you can't
+   * specify target table for update in FROM clause" — so the select and the
+   * update have to be separate statements.
+   *
+   * Splitting them does not weaken the claim, because the transaction is what
+   * carries the guarantee rather than the single statement. `FOR UPDATE SKIP
+   * LOCKED` takes row locks on exactly the rows this worker intends to claim
+   * and passes over any row another worker is already holding; those locks are
+   * held until this transaction commits, so no second worker can select the
+   * same rows in the window between the select and the update. Two workers
+   * still divide the queue rather than duplicating it.
+   */
+  return getDb().transaction(async (tx) => {
+    const locked = await tx
+      .select({ id: broadcastRecipients.id })
+      .from(broadcastRecipients)
+      .where(
+        and(
+          eq(broadcastRecipients.broadcastId, broadcastId),
+          eq(broadcastRecipients.status, 'queued'),
+          lt(broadcastRecipients.attempts, maxAttempts),
+        ),
+      )
+      .orderBy(broadcastRecipients.createdAt)
+      .limit(limit)
+      .for('update', { skipLocked: true })
 
-  return rows as unknown as ClaimedRecipient[]
+    const ids = locked.map((row) => row.id)
+    if (ids.length === 0) return []
+
+    await tx
+      .update(broadcastRecipients)
+      .set({
+        status: 'sending',
+        attempts: sql`${broadcastRecipients.attempts} + 1`,
+        updatedAt: sql`now()`,
+      })
+      .where(inArray(broadcastRecipients.id, ids))
+
+    /* Read back inside the transaction, which is what `RETURNING` gave for
+       free. It has to be after the update rather than reusing the locked rows:
+       the runner compares `attempts` against the maximum to decide whether a
+       failure is still retryable, and the pre-increment value would give every
+       recipient one attempt more than it is allowed. */
+    return tx
+      .select({
+        id: broadcastRecipients.id,
+        phone: broadcastRecipients.phone,
+        name: broadcastRecipients.name,
+        courseTitle: broadcastRecipients.courseTitle,
+        attempts: broadcastRecipients.attempts,
+      })
+      .from(broadcastRecipients)
+      .where(inArray(broadcastRecipients.id, ids))
+  })
 }
 
 /**
@@ -500,16 +537,24 @@ export async function claimRecipients(
  * enough that a resumed broadcast does not visibly stall.
  */
 export async function requeueStaleRecipients(broadcastId: string): Promise<number> {
-  const rows = await getDb().execute<{ id: string }>(sql`
-    UPDATE ${broadcastRecipients}
-    SET status = 'queued', updated_at = now()
-    WHERE broadcast_id = ${broadcastId}
-      AND status = 'sending'
-      AND updated_at < now() - interval '5 minutes'
-    RETURNING id
-  `)
+  const [result] = await getDb()
+    .update(broadcastRecipients)
+    .set({ status: 'queued', updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(broadcastRecipients.broadcastId, broadcastId),
+        eq(broadcastRecipients.status, 'sending'),
+        /* The cutoff stays in SQL rather than being computed here and bound as
+           a parameter. `updated_at` is written with the database's own `now()`,
+           so comparing it against the application's clock would be wrong by
+           whatever the two servers disagree by — and a five-minute threshold is
+           well within the range a timezone or drift mistake would swallow. */
+        sql`${broadcastRecipients.updatedAt} < now() - interval 5 minute`,
+      ),
+    )
 
-  return (rows as unknown as { id: string }[]).length
+  // MySQL cannot return the rows it changed, and only the count is used.
+  return result.affectedRows
 }
 
 export async function markRecipientSent(id: string, messageId?: string): Promise<void> {
@@ -556,15 +601,17 @@ export async function markRecipientSkipped(id: string, reason: string): Promise<
 
 /** Put failed rows back in the queue so the admin can retry just those. */
 export async function requeueFailed(broadcastId: string): Promise<number> {
-  const rows = await getDb().execute<{ id: string }>(sql`
-    UPDATE ${broadcastRecipients}
-    SET status = 'queued', attempts = 0, error = NULL, updated_at = now()
-    WHERE broadcast_id = ${broadcastId}
-      AND status = 'failed'
-    RETURNING id
-  `)
+  const [result] = await getDb()
+    .update(broadcastRecipients)
+    .set({ status: 'queued', attempts: 0, error: null, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(broadcastRecipients.broadcastId, broadcastId),
+        eq(broadcastRecipients.status, 'failed'),
+      ),
+    )
 
-  return (rows as unknown as { id: string }[]).length
+  return result.affectedRows
 }
 
 /**
