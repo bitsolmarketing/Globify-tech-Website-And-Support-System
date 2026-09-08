@@ -4,10 +4,10 @@ import { AdminPageHeader } from '@/components/admin/page-header'
 import { EmptyState } from '@/components/admin/table'
 import { isDatabaseConfigured } from '@/db'
 import { getCourses } from '@/lib/data/courses'
+import { canSendWhatsApp } from '@/lib/whatsapp/send'
 import { listTemplates } from '@/lib/whatsapp/templates'
 
-import { saveBroadcast } from '../actions'
-import { BroadcastForm } from '../broadcast-form'
+import { ComposeForm } from '../compose-form'
 
 export const metadata: Metadata = { title: 'New broadcast' }
 
@@ -18,7 +18,7 @@ export default async function NewBroadcastPage() {
         <AdminPageHeader title="New broadcast" backHref="/admin/broadcasts" />
         <EmptyState
           title="No database configured"
-          description="Broadcasts are stored in Postgres. Set DATABASE_URL and run the migration first."
+          description="Broadcasts are stored in the database. Set DATABASE_URL and run the migration first."
         />
       </>
     )
@@ -30,33 +30,16 @@ export default async function NewBroadcastPage() {
     <>
       <AdminPageHeader
         title="New broadcast"
-        description="Compose the message, choose who it goes to, then review the recipient list before anything is sent."
+        description="Pick the message, pick who gets it, send. Nothing goes out until the send button is pressed twice."
         backHref="/admin/broadcasts"
         backLabel="All broadcasts"
       />
 
-      <BroadcastForm
-        broadcastId={null}
+      <ComposeForm
         templates={templateResult.ok ? templateResult.templates : []}
         templatesError={templateResult.ok ? undefined : templateResult.error}
         courseOptions={courses.map((course) => ({ value: course.slug, label: course.title }))}
-        onSubmitAction={saveBroadcast}
-        defaultValues={{
-          name: '',
-          kind: 'template',
-          templateName: '',
-          templateLanguage: 'en_US',
-          templateVariables: '',
-          headerParameter: '',
-          headerImageUrl: '',
-          body: '',
-          source: 'leads',
-          leadStatus: '',
-          courseSlug: '',
-          sinceDays: '',
-          manual: '',
-          scheduledFor: '',
-        }}
+        canSend={canSendWhatsApp()}
       />
     </>
   )

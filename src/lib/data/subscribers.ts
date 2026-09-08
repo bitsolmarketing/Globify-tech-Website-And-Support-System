@@ -15,8 +15,7 @@ export async function createSubscriber(email: string, source = 'website-footer')
   await getDb()
     .insert(newsletterSubscribers)
     .values({ id: randomUUID(), email: email.trim().toLowerCase(), source })
-    .onConflictDoUpdate({
-      target: newsletterSubscribers.email,
+    .onDuplicateKeyUpdate({
       set: { status: 'subscribed', updatedAt: sql`CURRENT_TIMESTAMP` },
     })
 }

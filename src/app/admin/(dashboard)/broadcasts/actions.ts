@@ -4,23 +4,28 @@ import { revalidatePath } from 'next/cache'
 
 import { requireAdmin, runAction, runDataAction, type ActionResult, type DataResult } from '@/lib/admin/guard'
 import {
+  broadcastAudienceSchema,
   broadcastFormSchema,
+  broadcastMessageSchema,
+  toAudienceInput,
   toBroadcastInput,
+  toMessageInput,
+  type BroadcastAudienceValues,
   type BroadcastFormValues,
+  type BroadcastMessageValues,
 } from '@/lib/admin/schemas'
 import {
+  countRecipients,
   createBroadcast,
   deleteBroadcast,
   getBroadcast,
+  optedOutPhones,
   rebuildRecipients,
   recordOptOut,
   removeOptOut,
   requeueFailed,
   resolveAudience,
   setBroadcastStatus,
-  updateBroadcast,
-  countRecipients,
-  type AudienceResult,
 } from '@/lib/data/broadcasts'
 import { normalisePhone } from '@/lib/whatsapp/format'
 import { runBroadcastSlice, sendTestMessage, type SliceResult } from '@/lib/whatsapp/runner'
@@ -38,51 +43,118 @@ function refresh(id?: string) {
 }
 
 /* ---------------------------------------------------------------------------
- * Compose
+ * Compose and send
  * ------------------------------------------------------------------------ */
 
-export type SavedBroadcast = { id: string; audience: AudienceResult }
+export type AudiencePreview = {
+  /** People who would be messaged. */
+  total: number
+  /** Matched the filter but have opted out, so they are not in `total`. */
+  optedOut: number
+}
 
 /**
- * Save a draft and resolve its audience in one step.
+ * How many people the current filter selects, right now.
  *
- * The two are deliberately not separable. A saved broadcast whose recipient
- * list belongs to the *previous* filter is the single most dangerous state this
- * feature could have — the review screen would show one audience and the send
- * would go to another — so the list is rebuilt every time the filter is stored.
+ * Answered by the same resolver the send queues from rather than by a cheaper
+ * `count(*)`: the number on the screen is the promise the button makes, and the
+ * only way to keep it honest is to resolve the list the same way both times.
  */
-export async function saveBroadcast(
-  id: string | null,
-  values: BroadcastFormValues,
-): Promise<DataResult<SavedBroadcast>> {
+export async function previewAudience(
+  values: BroadcastAudienceValues,
+): Promise<DataResult<AudiencePreview>> {
+  return runDataAction(async () => {
+    await requireAdmin()
+
+    const candidates = await resolveAudience(toAudienceInput(broadcastAudienceSchema.parse(values)))
+    const suppressed = await optedOutPhones(candidates.map((candidate) => candidate.phone))
+
+    return {
+      total: candidates.length - suppressed.size,
+      optedOut: suppressed.size,
+    }
+  })
+}
+
+export type SendResult = {
+  id: string
+  queued: number
+  optedOut: number
+  /** True when it was scheduled for later rather than started now. */
+  scheduled: boolean
+}
+
+/**
+ * Compose, queue and start — one press.
+ *
+ * This was three steps across two screens: save a draft, review it, press send.
+ * The review screen did no work the compose screen could not do itself, because
+ * the two things worth checking — what the message says and who receives it —
+ * are both on the compose screen already, live. What it did do was let a
+ * draft's saved audience drift out of date behind the admin's back, which is
+ * the most dangerous state this feature could have: one list reviewed, another
+ * one sent. Resolving the audience and starting the send in a single action
+ * closes that window — the count that was on screen is the list that goes out.
+ */
+export async function sendBroadcast(values: BroadcastFormValues): Promise<DataResult<SendResult>> {
   return runDataAction(async () => {
     const admin = await requireAdmin()
     const input = toBroadcastInput(broadcastFormSchema.parse(values))
 
-    let broadcastId = id
-    if (broadcastId) {
-      await updateBroadcast(broadcastId, input)
-    } else {
-      const created = await createBroadcast({ ...input, createdBy: admin.email })
-      broadcastId = created.id
+    const broadcast = await createBroadcast({ ...input, createdBy: admin.email })
+    const audience = await rebuildRecipients(broadcast.id, await resolveAudience(input.audience))
+
+    /* Refused after the row exists rather than before it, so an empty filter
+       leaves a record of what was attempted instead of vanishing. */
+    if (audience.added === 0) {
+      await setBroadcastStatus(broadcast.id, 'cancelled', {
+        completedAt: new Date(),
+        lastError:
+          audience.total > 0
+            ? 'Everyone the filter matched has opted out of WhatsApp messages.'
+            : 'The filter matched nobody with a usable phone number.',
+      })
+      refresh(broadcast.id)
+      throw new Error(
+        audience.total > 0
+          ? `All ${audience.total} people matching that filter have opted out. Nothing was sent.`
+          : 'Nobody matches that filter. Nothing was sent.',
+      )
     }
 
-    const audience = await rebuildRecipients(broadcastId, await resolveAudience(input.audience))
+    const scheduled = Boolean(input.scheduledFor)
+    if (!scheduled) {
+      await setBroadcastStatus(broadcast.id, 'sending', { startedAt: new Date(), lastError: null })
+    }
 
-    refresh(broadcastId)
-    return { id: broadcastId, audience }
+    refresh(broadcast.id)
+    return { id: broadcast.id, queued: audience.added, optedOut: audience.optedOut, scheduled }
   })
 }
 
-/** Re-run the saved filter — the audience moves on even when the message does not. */
-export async function rebuildAudience(id: string): Promise<DataResult<AudienceResult>> {
-  return runDataAction(async () => {
-    const broadcast = await getBroadcast(id)
-    if (!broadcast?.audience) throw new Error('That broadcast has no audience filter saved.')
+/**
+ * Send the composed message to one number, before it exists as a broadcast.
+ *
+ * The single most useful thing in the whole feature, and it has to work from
+ * the compose screen: a template renders differently from how it reads here —
+ * the header, footer and buttons are all held by Meta — so the only way to know
+ * what four hundred people are about to receive is to receive it once first.
+ * Nothing is persisted and no recipient row is created.
+ */
+export async function sendTest(
+  values: BroadcastMessageValues,
+  phone: string,
+): Promise<ActionResult> {
+  return runAction(async () => {
+    await requireAdmin()
 
-    const audience = await rebuildRecipients(id, await resolveAudience(broadcast.audience))
-    refresh(id)
-    return audience
+    const to = normalisePhone(phone)
+    if (!to) throw new Error('That does not look like a valid phone number.')
+
+    /* Only the message is validated. A test needs no audience, and refusing one
+       until the recipient list is settled gets it exactly backwards. */
+    const outcome = await sendTestMessage(toMessageInput(broadcastMessageSchema.parse(values)), to)
+    if (!outcome.ok) throw new Error(outcome.error)
   })
 }
 
@@ -102,38 +174,25 @@ export async function removeBroadcast(id: string): Promise<ActionResult> {
 }
 
 /* ---------------------------------------------------------------------------
- * Sending
+ * Running
  * ------------------------------------------------------------------------ */
 
-/**
- * Move a reviewed broadcast into the queue.
- *
- * Every precondition that would otherwise fail hundreds of times — once per
- * recipient — is checked once, here, while there is still a person looking at
- * the screen to tell.
- */
-export async function startBroadcast(id: string): Promise<ActionResult> {
+/** Resume a paused send, or start a scheduled one ahead of its time. */
+export async function resumeBroadcast(id: string): Promise<ActionResult> {
   return runAction(async () => {
     const broadcast = await getBroadcast(id)
     if (!broadcast) throw new Error('That broadcast no longer exists.')
 
     if (broadcast.status === 'sending') throw new Error('That broadcast is already sending.')
     if (broadcast.status === 'completed') {
-      throw new Error('That broadcast has already been sent. Duplicate it to send again.')
-    }
-
-    if (broadcast.kind === 'template' && !broadcast.templateName) {
-      throw new Error('Choose an approved template before sending.')
-    }
-    if (broadcast.kind === 'text' && !broadcast.body?.trim()) {
-      throw new Error('Write the message before sending.')
+      throw new Error('That broadcast has already been sent. Compose a new one to send again.')
     }
 
     const totals = await countRecipients(id)
     if (totals.queued === 0) {
       throw new Error(
         totals.total === 0
-          ? 'This broadcast has no recipients. Rebuild the audience first.'
+          ? 'This broadcast has no recipients left.'
           : 'Every recipient has already been processed. Retry the failures instead.',
       )
     }
@@ -182,26 +241,6 @@ export async function runBroadcast(id: string): Promise<DataResult<SliceResult>>
     const result = await runBroadcastSlice(id)
     refresh(id)
     return result
-  })
-}
-
-/**
- * Send the composed message to one number, now.
- *
- * Bypasses the queue entirely — no recipient row is created and no counter
- * moves — because a test that shows up in the delivery report is a test that
- * makes the report a lie.
- */
-export async function sendTest(id: string, phone: string): Promise<ActionResult> {
-  return runAction(async () => {
-    const broadcast = await getBroadcast(id)
-    if (!broadcast) throw new Error('That broadcast no longer exists.')
-
-    const to = normalisePhone(phone)
-    if (!to) throw new Error('That does not look like a valid phone number.')
-
-    const outcome = await sendTestMessage(broadcast, to)
-    if (!outcome.ok) throw new Error(outcome.error)
   })
 }
 

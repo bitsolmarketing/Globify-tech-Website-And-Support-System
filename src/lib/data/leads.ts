@@ -2,7 +2,7 @@ import 'server-only'
 
 import { randomUUID } from 'node:crypto'
 
-import { and, count, desc, eq, gte, ilike, or, sql, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, gte, like, or, sql, type SQL } from 'drizzle-orm'
 
 import { getDb } from '@/db'
 import {
@@ -26,14 +26,17 @@ export type NewLead = {
 
 /**
  * The id is generated here rather than by the database so it is known before
- * the write, and `RETURNING` hands back the stored row — including the
- * defaults and timestamps the insert did not supply — in the same round trip.
+ * the write. MySQL has no `RETURNING`, so that id is also what reads the
+ * stored row back — including the defaults and timestamps the insert did not
+ * supply — in a second round trip.
  */
 export async function createLead(input: NewLead): Promise<LeadRow> {
-  const [row] = await getDb()
-    .insert(leads)
-    .values({ id: randomUUID(), ...input })
-    .returning()
+  const db = getDb()
+  const id = randomUUID()
+
+  await db.insert(leads).values({ id, ...input })
+
+  const [row] = await db.select().from(leads).where(eq(leads.id, id)).limit(1)
 
   return row
 }
@@ -101,11 +104,12 @@ export async function upsertChannelLead(input: ChannelLead): Promise<void> {
       source: input.source,
       campaign: input.campaign ?? null,
     })
-    /* Targeted at `external_ref` specifically. MySQL's ON DUPLICATE KEY UPDATE
-       fired on whichever unique index happened to be violated; Postgres makes
-       the conflict target explicit, and this is the only one that can collide —
-       `id` is a fresh uuid on every call. */
-    .onConflictDoUpdate({ target: leads.externalRef, set: update })
+/* MySQL's ON DUPLICATE KEY UPDATE fires on whichever unique index was
+       violated, with no way to name one. That is safe here only because
+       `leads_external_ref_key` is the sole index this row can collide on —
+       the primary key is a fresh uuid on every call. Adding another unique
+       index to `leads` would silently widen what this absorbs. */
+    .onDuplicateKeyUpdate({ set: update })
 }
 
 export type LeadFilters = {
@@ -120,19 +124,18 @@ function buildWhere(filters: LeadFilters): SQL | undefined {
   const clauses: SQL[] = []
 
   if (filters.search) {
-    /* `ilike`, not `like`. Under MySQL every column collated as
-       utf8mb4_unicode_ci, so `LIKE` was case-insensitive and the distinction
-       never came up. Postgres compares text exactly, so a plain `LIKE` here
-       would quietly stop matching "Ahmed" when the admin typed "ahmed" — a
-       search box that returns nothing looks like a lead that was never
-       captured, which is the worst way for this to fail. */
+    /* `like`, not `ilike`: `ILIKE` is Postgres-only syntax and MySQL rejects
+       it as a syntax error, so the search box 500s rather than returning
+       nothing. Case-insensitivity is not lost by dropping it — every column
+       here is collated utf8mb4_unicode_ci, under which `LIKE` already ignores
+       case, so the admin typing "ahmed" still finds "Ahmed". */
     const term = `%${filters.search}%`
     const match = or(
-      ilike(leads.name, term),
-      ilike(leads.email, term),
-      ilike(leads.phone, term),
-      ilike(leads.handle, term),
-      ilike(leads.message, term),
+      like(leads.name, term),
+      like(leads.email, term),
+      like(leads.phone, term),
+      like(leads.handle, term),
+      like(leads.message, term),
     )
     if (match) clauses.push(match)
   }

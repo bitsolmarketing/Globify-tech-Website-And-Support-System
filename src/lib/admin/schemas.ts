@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { BROADCAST_KINDS, BROADCAST_SOURCES, LEAD_STATUSES } from '@/db/schema'
+import { BROADCAST_SOURCES, LEAD_STATUSES } from '@/db/schema'
 import { parsePhoneList } from '@/lib/whatsapp/format'
 import { courseCategories, type Course } from '@/lib/courses'
 
@@ -404,91 +404,106 @@ export const leadStatusSchema = z.enum(LEAD_STATUSES)
 /* ---------------------------------------------------------------------------
  * WhatsApp broadcasts
  *
- * One schema for the compose form and the server action that saves it, in the
- * same arrangement as everything above. Every field is a string because that is
- * what an `<input>` produces; `toBroadcastInput` is the single place they are
- * parsed into the shapes the database column expects, so the browser's idea of
- * "three variables" and the server's cannot diverge.
+ * A broadcast is always an approved template. Free text was possible in an
+ * earlier version and is not offered any more: WhatsApp only delivers it inside
+ * 24 hours of the recipient's own message, so on the cold list an announcement
+ * actually goes to, nearly every row came back "skipped" rather than sent.
+ *
+ * The audience fields are declared once and shared, because the compose screen
+ * counts the audience live — before a template has been chosen — and that count
+ * has to come from the same parsing the send will use. A second idea of what
+ * "412 recipients" means is how a list that previewed as 412 sends to 340.
  * ------------------------------------------------------------------------ */
+
+const broadcastAudienceFields = {
+  source: z.enum(BROADCAST_SOURCES, {
+    errorMap: () => ({ message: 'Choose where the recipients come from' }),
+  }),
+  /** Blank means "any". */
+  leadStatus: z.union([leadStatusSchema, z.literal('')]),
+  courseSlug: z.string().trim().max(191),
+  sinceDays: z.union([
+    z.coerce.number().int().min(1, 'Use at least 1 day').max(3650),
+    z.literal(''),
+  ]),
+  manual: z.string(),
+}
+
+export const broadcastAudienceSchema = z.object(broadcastAudienceFields)
+export type BroadcastAudienceValues = z.infer<typeof broadcastAudienceSchema>
+
+/** The stored filter. Shared by the live count and the send, so they agree. */
+export function toAudienceInput(values: BroadcastAudienceValues) {
+  return {
+    source: values.source,
+    leadStatus: values.leadStatus || null,
+    courseSlug: values.courseSlug || null,
+    sinceDays: values.sinceDays === '' ? null : values.sinceDays,
+    /* Normalised and de-duplicated on the way in, so the stored filter is what
+       will actually be messaged rather than the raw paste. */
+    manual: values.source === 'manual' ? parsePhoneList(values.manual).valid : [],
+  }
+}
+
+/**
+ * The message, separable from the audience for the same reason: a test send
+ * goes to one typed-in number and has no audience at all. Validating the whole
+ * form for it would refuse to test a message until the recipient list was
+ * settled — which is backwards, since the test is what tells you whether the
+ * message is worth sending to that list.
+ */
+const broadcastMessageFields = {
+  templateName: z.string().trim().min(1, 'Choose an approved template').max(191),
+  templateLanguage: z
+    .string()
+    .trim()
+    .min(1, 'A template is identified by its name AND its language')
+    .max(16),
+  /** One value per line, for `{{1}}`, `{{2}}` … in order. */
+  templateVariables: z.string(),
+  headerParameter: z.string().trim().max(500),
+  headerImageUrl: z.union([
+    z
+      .string()
+      .trim()
+      .url('Enter a full https:// image URL')
+      /* Meta fetches this itself, from its own servers. An http URL, or one
+         behind the admin login, resolves for the person composing and fails
+         for Meta — which surfaces as every message failing at once with a
+         header error that never mentions the URL. */
+      .startsWith('https://', 'The image URL must start with https://'),
+    z.literal(''),
+  ]),
+}
+
+export const broadcastMessageSchema = z.object(broadcastMessageFields)
+export type BroadcastMessageValues = z.infer<typeof broadcastMessageSchema>
+
+/** What the runner needs to render one message. */
+export function toMessageInput(values: BroadcastMessageValues) {
+  return {
+    templateName: values.templateName,
+    templateLanguage: values.templateLanguage || 'en_US',
+    templateVariables: toLines(values.templateVariables),
+    headerParameter: values.headerParameter || null,
+    headerImageUrl: values.headerImageUrl || null,
+  }
+}
 
 export const broadcastFormSchema = z
   .object({
-    name: z
-      .string()
-      .trim()
-      .min(3, 'Give the broadcast a name you will recognise later')
-      .max(160),
-    kind: z.enum(BROADCAST_KINDS, {
-      errorMap: () => ({ message: 'Choose a template or a free-text message' }),
-    }),
+    ...broadcastMessageFields,
+    ...broadcastAudienceFields,
 
-    /* --- Template --------------------------------------------------------- */
-    templateName: z.string().trim().max(191),
-    templateLanguage: z.string().trim().max(16),
-    /** One value per line, for `{{1}}`, `{{2}}` … in order. */
-    templateVariables: z.string(),
-    headerParameter: z.string().trim().max(500),
-    headerImageUrl: z.union([
-      z
-        .string()
-        .trim()
-        .url('Enter a full https:// image URL')
-        /* Meta fetches this itself, from its own servers. An http URL, or one
-           behind the admin login, resolves for the person composing and fails
-           for Meta — which surfaces as every message failing at once with a
-           header error that never mentions the URL. */
-        .startsWith('https://', 'The image URL must start with https://'),
-      z.literal(''),
-    ]),
+    /** Optional: one is derived from the template and the date when left blank. */
+    name: z.string().trim().max(160),
 
-    /* --- Free text -------------------------------------------------------- */
-    body: z.string().trim().max(4096, 'WhatsApp messages are capped at 4096 characters'),
-
-    /* --- Audience --------------------------------------------------------- */
-    source: z.enum(BROADCAST_SOURCES, {
-      errorMap: () => ({ message: 'Choose where the recipients come from' }),
-    }),
-    /** Blank means "any". */
-    leadStatus: z.union([leadStatusSchema, z.literal('')]),
-    courseSlug: z.string().trim().max(191),
-    sinceDays: z.union([
-      z.coerce.number().int().min(1, 'Use at least 1 day').max(3650),
-      z.literal(''),
-    ]),
-    manual: z.string(),
-
-    /* --- Schedule --------------------------------------------------------- */
-    /** `datetime-local` value, or blank to send manually. */
+    /** `datetime-local` value, or blank to send straight away. */
     scheduledFor: z.string().trim(),
   })
   .superRefine((values, ctx) => {
-    if (values.kind === 'template') {
-      if (!values.templateName) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['templateName'],
-          message: 'Choose an approved template',
-        })
-      }
-      if (!values.templateLanguage) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['templateLanguage'],
-          message: 'A template is identified by its name AND its language',
-        })
-      }
-    }
-
-    if (values.kind === 'text' && values.body.length < 5) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['body'],
-        message: 'Write the message you want to send',
-      })
-    }
-
     /* Checked with the same parser the runner queues from, so "12 numbers
-       accepted" in the form is 12 rows in the database and not 9. */
+       accepted" on the screen is 12 rows in the database and not 9. */
     if (values.source === 'manual' && parsePhoneList(values.manual).valid.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -511,7 +526,7 @@ export const broadcastFormSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['scheduledFor'],
-          message: 'Schedule it for a time in the future, or leave it blank to send by hand',
+          message: 'Schedule it for a time in the future, or leave it blank to send now',
         })
       }
     }
@@ -519,28 +534,31 @@ export const broadcastFormSchema = z
 
 export type BroadcastFormValues = z.infer<typeof broadcastFormSchema>
 
-/** The stored shape, derived once so the form and the action agree on it. */
+/**
+ * The stored shape, derived once so the form and the action agree on it.
+ *
+ * `kind` is still written because the column exists for broadcasts sent by the
+ * older version; everything composed now is a template.
+ */
 export function toBroadcastInput(values: BroadcastFormValues) {
-  const template = values.kind === 'template'
-
   return {
-    name: values.name,
-    kind: values.kind,
-    templateName: template ? values.templateName : null,
-    templateLanguage: template ? values.templateLanguage || 'en_US' : null,
-    templateVariables: template ? toLines(values.templateVariables) : [],
-    headerParameter: template ? values.headerParameter || null : null,
-    headerImageUrl: template ? values.headerImageUrl || null : null,
-    body: values.kind === 'text' ? values.body : null,
-    audience: {
-      source: values.source,
-      leadStatus: values.leadStatus || null,
-      courseSlug: values.courseSlug || null,
-      sinceDays: values.sinceDays === '' ? null : values.sinceDays,
-      /* Normalised and de-duplicated on the way in, so the stored filter is
-         what will actually be messaged rather than the raw paste. */
-      manual: values.source === 'manual' ? parsePhoneList(values.manual).valid : [],
-    },
+    ...toMessageInput(values),
+    name: values.name || defaultBroadcastName(values.templateName),
+    kind: 'template' as const,
+    body: null,
+    audience: toAudienceInput(values),
     scheduledFor: values.scheduledFor ? new Date(values.scheduledFor) : null,
   }
+}
+
+/**
+ * A name nobody had to think of.
+ *
+ * The name exists only so a send can be found again in the list, which the
+ * template and the day it went out identify perfectly well. Asking for it made
+ * it the first required field on the screen, ahead of everything that matters.
+ */
+export function defaultBroadcastName(templateName: string): string {
+  const when = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return `${templateName || 'Broadcast'} · ${when}`
 }

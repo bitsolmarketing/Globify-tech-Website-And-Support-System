@@ -81,10 +81,21 @@ async function fetchTemplates(): Promise<TemplateFetch> {
   const token = process.env.WHATSAPP_TOKEN?.trim()
 
   if (!wabaId || !token) {
+    /* Name the one that is actually missing. In practice only WHATSAPP_WABA_ID
+       is: sending needs the token, so a working bot with an empty template list
+       is the normal shape of this failure, and "both must be set" reads as a
+       claim that the token is wrong too. */
+    const missing = [!wabaId && 'WHATSAPP_WABA_ID', !token && 'WHATSAPP_TOKEN'].filter(Boolean)
+    const subject =
+      missing.length === 1 ? `${missing[0]} is not set` : `${missing.join(' and ')} are not set`
+    const where = wabaId
+      ? ''
+      : ' The WhatsApp Business Account id is in Meta > WhatsApp > API Setup, above the phone' +
+        ' number list — it is not the phone number id.'
     return {
       ok: false,
       error:
-        'WHATSAPP_WABA_ID and WHATSAPP_TOKEN must both be set to list approved templates. ' +
+        `${subject}, so approved templates cannot be listed.${where} ` +
         'You can still send by typing the template name and language by hand.',
     }
   }

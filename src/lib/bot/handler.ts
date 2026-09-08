@@ -2,7 +2,7 @@ import 'server-only'
 
 import { randomUUID } from 'node:crypto'
 
-import { and, desc, eq, gte } from 'drizzle-orm'
+import { and, desc, eq, gte, sql } from 'drizzle-orm'
 
 import { getDb, isDatabaseConfigured } from '@/db'
 import {
@@ -281,18 +281,21 @@ async function resolveConversation(
   }
 
   const prefix = { whatsapp: 'WA', instagram: 'IG', messenger: 'MS', web: 'WEB' }[message.channel]
-  const [created] = await db
-    .insert(conversations)
-    .values({
-      id: randomUUID(),
-      reference: `${prefix}-${randomUUID().slice(0, 8).toUpperCase()}`,
-      channel: message.channel,
-      contactPhone: phone ?? null,
-      contactHandle: isWhatsApp ? null : message.senderId,
-      contactName: message.profileName ?? null,
-      language: detectLanguage(message.text),
-    })
-    .returning()
+  /* MySQL has no RETURNING, so the stored row is read back by the id generated
+     here — the caller needs the defaults the insert did not supply. */
+  const id = randomUUID()
+
+  await db.insert(conversations).values({
+    id,
+    reference: `${prefix}-${randomUUID().slice(0, 8).toUpperCase()}`,
+    channel: message.channel,
+    contactPhone: phone ?? null,
+    contactHandle: isWhatsApp ? null : message.senderId,
+    contactName: message.profileName ?? null,
+    language: detectLanguage(message.text),
+  })
+
+  const [created] = await db.select().from(conversations).where(eq(conversations.id, id)).limit(1)
 
   return created
 }
@@ -302,7 +305,16 @@ async function recordInbound(conversationId: string, message: InboundMessage): P
     message.text || (message.kind === 'media' ? '[attachment]' : '[unsupported message]')
 
   try {
-    const inserted = await getDb()
+    /* Meta redelivers anything it is not certain arrived, so this has to tell a
+       new message from one already recorded — and without RETURNING the
+       affected-row count is what carries that. Under ON DUPLICATE KEY UPDATE
+       MySQL reports 1 when it inserted a new row and 0 when it set an existing
+       one to the values it already held, which is exactly what setting `id` to
+       itself does. A 2 would mean a real update, which this can never produce.
+
+       Distinguishing the two matters: a redelivery is routine and must not be
+       answered twice, while a genuine failure needs to surface in the log. */
+    const [result] = await getDb()
       .insert(conversationMessages)
       .values({
         id: randomUUID(),
@@ -312,10 +324,9 @@ async function recordInbound(conversationId: string, message: InboundMessage): P
         language: detectLanguage(message.text),
         externalId: message.messageId,
       })
-      .onConflictDoNothing({ target: conversationMessages.externalId })
-      .returning({ id: conversationMessages.id })
+      .onDuplicateKeyUpdate({ set: { id: sql`id` } })
 
-    if (!inserted.length) {
+    if (result.affectedRows !== 1) {
       console.info('[bot] duplicate delivery ignored:', message.messageId)
       return false
     }
@@ -404,8 +415,11 @@ async function say(
       language: context.language,
       externalId: result.messageId ?? null,
     })
-    .onConflictDoNothing()
-    .catch((error) => console.warn('[bot] transcript write skipped:', error?.message))
+    /* The transcript is a nice-to-have: a duplicate `external_id` from a retry
+       should leave the first copy alone, and any other failure should not stop
+       the reply that was already sent. */
+    .onDuplicateKeyUpdate({ set: { id: sql`id` } })
+    .catch((error: Error) => console.warn('[bot] transcript write skipped:', error?.message))
 
   await getDb()
     .update(conversations)

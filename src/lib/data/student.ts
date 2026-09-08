@@ -309,8 +309,8 @@ export async function setModuleProgress(
   await db
     .insert(moduleProgress)
     .values({ id: randomUUID(), enrollmentId: enrollment.id, moduleIndex, moduleTitle })
-    .onConflictDoUpdate({
-      target: [moduleProgress.enrollmentId, moduleProgress.moduleIndex],
+    /* Keyed by `module_progress_enrollment_module_key`. */
+    .onDuplicateKeyUpdate({
       set: { moduleTitle, completedAt: sql`now()` },
     })
 }
@@ -431,8 +431,9 @@ export async function submitAssignment(
       submittedAt: now,
       late,
     })
-    .onConflictDoUpdate({
-      target: [submissions.assignmentId, submissions.studentId],
+    /* Keyed by `submissions_assignment_student_key`: resubmitting replaces
+       the previous attempt and clears the grade it had been given. */
+    .onDuplicateKeyUpdate({
       set: {
         url: input.url?.trim() || null,
         notes: input.notes?.trim() || null,

@@ -302,18 +302,23 @@ export async function createSession(
 ): Promise<ClassSessionRow> {
   await ownedBatch(instructorId, batchId)
 
-  const [row] = await getDb()
-    .insert(classSessions)
-    .values({
-      id: randomUUID(),
-      batchId,
-      title: input.title.trim(),
-      topic: input.topic?.trim() || null,
-      scheduledAt: input.scheduledAt,
-      durationMinutes: input.durationMinutes,
-      meetingUrl: input.meetingUrl?.trim() || null,
-    })
-    .returning()
+  /* MySQL has no RETURNING, so the stored row — with the defaults and
+     timestamps the insert did not supply — is read back by the id generated
+     here. Two round trips instead of one, which is the price of the dialect. */
+  const db = getDb()
+  const id = randomUUID()
+
+  await db.insert(classSessions).values({
+    id,
+    batchId,
+    title: input.title.trim(),
+    topic: input.topic?.trim() || null,
+    scheduledAt: input.scheduledAt,
+    durationMinutes: input.durationMinutes,
+    meetingUrl: input.meetingUrl?.trim() || null,
+  })
+
+  const [row] = await db.select().from(classSessions).where(eq(classSessions.id, id)).limit(1)
 
   return row
 }
@@ -430,8 +435,9 @@ export async function saveAttendance(
           note: mark.note?.trim() || null,
           markedById: instructorId,
         })
-        .onConflictDoUpdate({
-          target: [attendance.sessionId, attendance.studentId],
+        /* Keyed by `attendance_session_student_key`, the only unique index
+           this row can collide on besides its own fresh-uuid primary key. */
+        .onDuplicateKeyUpdate({
           set: {
             status: mark.status,
             note: mark.note?.trim() || null,
@@ -620,22 +626,24 @@ export async function createAssignment(
 ): Promise<AssignmentRow> {
   await ownedBatch(instructorId, batchId)
 
-  const [row] = await getDb()
-    .insert(assignments)
-    .values({
-      id: randomUUID(),
-      batchId,
-      title: input.title.trim(),
-      brief: input.brief.trim(),
-      attachmentUrl: input.attachmentUrl?.trim() || null,
-      dueAt: input.dueAt,
-      maxScore: input.maxScore,
-      weight: input.weight,
-      allowLate: input.allowLate,
-      publishedAt: input.publish ? new Date() : null,
-      createdById: instructorId,
-    })
-    .returning()
+  const db = getDb()
+  const id = randomUUID()
+
+  await db.insert(assignments).values({
+    id,
+    batchId,
+    title: input.title.trim(),
+    brief: input.brief.trim(),
+    attachmentUrl: input.attachmentUrl?.trim() || null,
+    dueAt: input.dueAt,
+    maxScore: input.maxScore,
+    weight: input.weight,
+    allowLate: input.allowLate,
+    publishedAt: input.publish ? new Date() : null,
+    createdById: instructorId,
+  })
+
+  const [row] = await db.select().from(assignments).where(eq(assignments.id, id)).limit(1)
 
   return row
 }
@@ -843,23 +851,25 @@ export async function createQuiz(
 ): Promise<QuizRow> {
   await ownedBatch(instructorId, batchId)
 
-  const [row] = await getDb()
-    .insert(quizzes)
-    .values({
-      id: randomUUID(),
-      batchId,
-      title: input.title.trim(),
-      description: input.description?.trim() || null,
-      questions: input.questions,
-      timeLimitMinutes: input.timeLimitMinutes,
-      maxAttempts: input.maxAttempts,
-      passScore: input.passScore,
-      weight: input.weight,
-      dueAt: input.dueAt,
-      publishedAt: input.publish ? new Date() : null,
-      createdById: instructorId,
-    })
-    .returning()
+  const db = getDb()
+  const id = randomUUID()
+
+  await db.insert(quizzes).values({
+    id,
+    batchId,
+    title: input.title.trim(),
+    description: input.description?.trim() || null,
+    questions: input.questions,
+    timeLimitMinutes: input.timeLimitMinutes,
+    maxAttempts: input.maxAttempts,
+    passScore: input.passScore,
+    weight: input.weight,
+    dueAt: input.dueAt,
+    publishedAt: input.publish ? new Date() : null,
+    createdById: instructorId,
+  })
+
+  const [row] = await db.select().from(quizzes).where(eq(quizzes.id, id)).limit(1)
 
   return row
 }
@@ -977,21 +987,22 @@ export async function issueCertificate(
   }
 
   const db = getDb()
-  const [row] = await db
-    .insert(certificates)
-    .values({
-      id: randomUUID(),
-      enrollmentId: entry.student.id,
-      studentId,
-      batchId,
-      serial: certificateSerial(),
-      studentName: entry.student.studentName,
-      courseTitle: batch.courseTitle,
-      finalScore: entry.eligibility.score,
-      grade: entry.eligibility.grade,
-      issuedById: instructorId,
-    })
-    .returning()
+  const id = randomUUID()
+
+  await db.insert(certificates).values({
+    id,
+    enrollmentId: entry.student.id,
+    studentId,
+    batchId,
+    serial: certificateSerial(),
+    studentName: entry.student.studentName,
+    courseTitle: batch.courseTitle,
+    finalScore: entry.eligibility.score,
+    grade: entry.eligibility.grade,
+    issuedById: instructorId,
+  })
+
+  const [row] = await db.select().from(certificates).where(eq(certificates.id, id)).limit(1)
 
   /* Completing the course and being certified for it are the same event. */
   await db

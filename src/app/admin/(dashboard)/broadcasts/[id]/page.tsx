@@ -1,13 +1,11 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { CheckCheck, Eye, Pencil } from 'lucide-react'
+import { CheckCheck, Eye } from 'lucide-react'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
 import { DeleteButton } from '@/components/admin/delete-button'
 import { DataTable, EmptyState, Tbody, Td, Th, Thead, Tr } from '@/components/admin/table'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { isDatabaseConfigured } from '@/db'
 import { countRecipients, getBroadcast, listRecipients } from '@/lib/data/broadcasts'
@@ -18,12 +16,10 @@ import { formatDate } from '@/lib/utils'
 import {
   cancelBroadcast,
   pauseBroadcast,
-  rebuildAudience,
   removeBroadcast,
+  resumeBroadcast,
   retryFailed,
   runBroadcast,
-  sendTest,
-  startBroadcast,
 } from '../actions'
 import { BroadcastProgress } from '../progress-bar'
 import { BroadcastStatusBadge } from '../status-badge'
@@ -92,7 +88,6 @@ export default async function BroadcastDetailPage({
     listRecipients(id, { limit: 500 }),
   ])
 
-  const editable = broadcast.status !== 'sending' && broadcast.status !== 'completed'
   const read = recipients.filter((r) => r.deliveryStatus === 'read').length
   const delivered = recipients.filter(
     (r) => r.deliveryStatus === 'delivered' || r.deliveryStatus === 'read',
@@ -102,24 +97,12 @@ export default async function BroadcastDetailPage({
     <>
       <AdminPageHeader
         title={broadcast.name}
-        description={
-          broadcast.kind === 'template'
-            ? `Template · ${broadcast.templateName} · ${broadcast.templateLanguage}`
-            : 'Free text · only reaches people who messaged in the last 24 hours'
-        }
+        description={`Template · ${broadcast.templateName} · ${broadcast.templateLanguage}`}
         backHref="/admin/broadcasts"
         backLabel="All broadcasts"
         actions={
           <>
             <BroadcastStatusBadge status={broadcast.status} size="lg" />
-            {editable && (
-              <Button asChild variant="secondary" size="md">
-                <Link href={`/admin/broadcasts/${id}/edit`}>
-                  <Pencil aria-hidden />
-                  Edit
-                </Link>
-              </Button>
-            )}
             {broadcast.status !== 'sending' && (
               <DeleteButton
                 label={`Delete ${broadcast.name}`}
@@ -156,7 +139,7 @@ export default async function BroadcastDetailPage({
 
           {totals.total === 0 ? (
             <p className="font-sans text-[0.9375rem] text-ink-500">
-              No recipients yet. Rebuild the audience to fill the list from the saved filters.
+              No recipients. Every match was removed before the send began.
             </p>
           ) : (
             <BroadcastProgress totals={totals} />
@@ -185,13 +168,11 @@ export default async function BroadcastDetailPage({
           failed={totals.failed}
           canSend={canSendWhatsApp()}
           actions={{
-            start: startBroadcast,
+            resume: resumeBroadcast,
             pause: pauseBroadcast,
             cancel: cancelBroadcast,
             run: runBroadcast,
             retryFailed,
-            rebuildAudience,
-            sendTest,
           }}
         />
 
@@ -199,7 +180,7 @@ export default async function BroadcastDetailPage({
         {recipients.length === 0 ? (
           <EmptyState
             title="No recipients"
-            description="Rebuild the audience to fill this list from the filters saved with the broadcast."
+            description="Nobody was queued for this broadcast."
           />
         ) : (
           <div>
