@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { notFound, redirect } from 'next/navigation'
 
 import { AdminPageHeader as PageHeader } from '@/components/admin/page-header'
-import { SimpleForm } from '@/components/admin/simple-form'
+import { AssignmentForm, type AssignmentValues } from '@/components/portal/instructor-forms'
 import type { ActionResult } from '@/lib/admin/guard'
 import { createAssignment, listInstructorBatches } from '@/lib/data/instructor'
 import { runPortalAction } from '@/lib/portal/guard'
@@ -12,17 +12,6 @@ import { requireInstructorAccount } from '@/lib/portal/session'
 
 export const metadata: Metadata = { title: 'New assignment' }
 
-type AssignmentValues = {
-  title: string
-  brief: string
-  attachmentUrl?: string
-  dueAt: string
-  maxScore: number
-  weight: number
-  allowLate: boolean
-  publish: boolean
-  batchId: string
-}
 
 export default async function NewAssignmentPage({
   searchParams,
@@ -80,8 +69,7 @@ export default async function NewAssignmentPage({
         description="Students see published assignments immediately. Leave it unpublished to keep working on the brief."
       />
 
-      <SimpleForm<AssignmentValues>
-        schema={assignmentWithBatchSchema as never}
+      <AssignmentForm
         defaultValues={{
           title: '',
           brief: '',

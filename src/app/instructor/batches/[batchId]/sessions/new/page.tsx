@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { AdminPageHeader as PageHeader } from '@/components/admin/page-header'
-import { SimpleForm } from '@/components/admin/simple-form'
+import { SessionForm, type SessionValues } from '@/components/portal/instructor-forms'
 import type { ActionResult } from '@/lib/admin/guard'
 import { createSession } from '@/lib/data/instructor'
 import { getBatchForInstructor } from '@/lib/data/portal'
@@ -13,13 +13,6 @@ import { requireInstructorAccount } from '@/lib/portal/session'
 
 export const metadata: Metadata = { title: 'Add a class' }
 
-type SessionValues = {
-  title: string
-  topic?: string
-  scheduledAt: string
-  durationMinutes: number
-  meetingUrl?: string
-}
 
 export default async function NewSessionPage({
   params,
@@ -72,8 +65,7 @@ export default async function NewSessionPage({
         description={`Scheduling a class for ${batch.courseTitle}. Students see it on their course page, and it is what you take a register against.`}
       />
 
-      <SimpleForm<SessionValues>
-        schema={sessionSchema as never}
+      <SessionForm
         defaultValues={{
           title: '',
           topic: '',

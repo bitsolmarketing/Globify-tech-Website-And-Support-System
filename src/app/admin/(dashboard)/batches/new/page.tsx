@@ -3,15 +3,15 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
-import { SimpleForm } from '@/components/admin/simple-form'
 import { EmptyState } from '@/components/admin/table'
 import { Button } from '@/components/ui/button'
 import type { ActionResult } from '@/lib/admin/guard'
 import { listCourseOptions, listPortalUsers } from '@/lib/data/portal'
-import { batchSchema, type BatchValues } from '@/lib/portal/schemas'
+import { type BatchValues } from '@/lib/portal/schemas'
 
 import { createBatchAction } from '../actions'
 import { batchFields } from '../batch-fields'
+import { BatchForm } from '../batch-form'
 
 export const metadata: Metadata = { title: 'New batch' }
 
@@ -61,8 +61,7 @@ export default async function NewBatchPage() {
         description="One delivery of a course to one group, on one timetable, led by one instructor."
       />
 
-      <SimpleForm<BatchValues>
-        schema={batchSchema as never}
+      <BatchForm
         defaultValues={{
           courseId: courses[0]?.id ?? '',
           code: '',

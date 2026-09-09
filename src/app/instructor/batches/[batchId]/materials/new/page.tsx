@@ -3,8 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { AdminPageHeader as PageHeader } from '@/components/admin/page-header'
-import { SimpleForm } from '@/components/admin/simple-form'
-import type { MaterialType } from '@/db/schema'
+import { MaterialForm, type MaterialValues } from '@/components/portal/instructor-forms'
 import type { ActionResult } from '@/lib/admin/guard'
 import { createMaterial } from '@/lib/data/instructor'
 import { getBatchCurriculum, getBatchForInstructor } from '@/lib/data/portal'
@@ -14,14 +13,6 @@ import { requireInstructorAccount } from '@/lib/portal/session'
 
 export const metadata: Metadata = { title: 'Add material' }
 
-type MaterialValues = {
-  title: string
-  description?: string
-  type: MaterialType
-  url?: string
-  body?: string
-  moduleIndex?: number
-}
 
 export default async function NewMaterialPage({
   params,
@@ -72,8 +63,7 @@ export default async function NewMaterialPage({
         description={`Anything your students on ${batch.courseTitle} should have — slides, a repository, a recording, or a note you type here.`}
       />
 
-      <SimpleForm<MaterialValues>
-        schema={materialSchema as never}
+      <MaterialForm
         defaultValues={{
           title: '',
           description: '',

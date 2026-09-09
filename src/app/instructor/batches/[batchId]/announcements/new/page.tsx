@@ -3,7 +3,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { AdminPageHeader as PageHeader } from '@/components/admin/page-header'
-import { SimpleForm } from '@/components/admin/simple-form'
+import { AnnouncementForm, type AnnouncementValues } from '@/components/portal/instructor-forms'
 import type { ActionResult } from '@/lib/admin/guard'
 import { createAnnouncement, listInstructorBatches } from '@/lib/data/instructor'
 import { orNotFound, runPortalAction } from '@/lib/portal/guard'
@@ -13,12 +13,6 @@ import { getBatchForInstructor } from '@/lib/data/portal'
 
 export const metadata: Metadata = { title: 'Post an announcement' }
 
-type AnnouncementValues = {
-  batchId: string
-  title: string
-  body: string
-  pinned: boolean
-}
 
 export default async function NewAnnouncementPage({
   params,
@@ -69,8 +63,7 @@ export default async function NewAnnouncementPage({
         description="Appears on the dashboard of everyone it is addressed to, newest first. Pin the ones that must not scroll away."
       />
 
-      <SimpleForm<AnnouncementValues>
-        schema={announcementSchema as never}
+      <AnnouncementForm
         defaultValues={{ batchId, title: '', body: '', pinned: false }}
         fields={[
           {

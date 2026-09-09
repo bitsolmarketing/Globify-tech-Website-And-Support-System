@@ -4,7 +4,6 @@ import { notFound } from 'next/navigation'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
 import { EnrolStudent } from '@/components/admin/enrol-student'
-import { SimpleForm } from '@/components/admin/simple-form'
 import { DataTable, Tbody, Td, Th, Thead, Tr } from '@/components/admin/table'
 import { ActionButton } from '@/components/portal/action-button'
 import { BatchStatusBadge, EnrollmentBadge, formatDateTime } from '@/components/portal/ui'
@@ -17,7 +16,7 @@ import {
   listCourseOptions,
   listPortalUsers,
 } from '@/lib/data/portal'
-import { batchSchema, type BatchValues } from '@/lib/portal/schemas'
+import { type BatchValues } from '@/lib/portal/schemas'
 
 import {
   enrollStudentAction,
@@ -25,6 +24,7 @@ import {
   updateBatchAction,
 } from '../actions'
 import { batchFields } from '../batch-fields'
+import { BatchForm } from '../batch-form'
 
 export const metadata: Metadata = { title: 'Batch' }
 
@@ -68,8 +68,7 @@ export default async function AdminBatchPage({ params }: { params: Promise<{ id:
       </div>
 
       <div className="grid gap-8">
-        <SimpleForm<BatchValues>
-          schema={batchSchema as never}
+        <BatchForm
           defaultValues={{
             courseId: batch.courseId,
             code: batch.code,

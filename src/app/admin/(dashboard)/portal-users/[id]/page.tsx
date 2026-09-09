@@ -3,12 +3,10 @@ import { notFound } from 'next/navigation'
 
 import { AdminPageHeader } from '@/components/admin/page-header'
 import { ResetPasswordButton } from '@/components/admin/reset-password-button'
-import { SimpleForm } from '@/components/admin/simple-form'
 import { ActionButton } from '@/components/portal/action-button'
 import { EnrollmentBadge, formatDateTime } from '@/components/portal/ui'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import type { PortalRole } from '@/db/schema'
 import type { ActionResult } from '@/lib/admin/guard'
 import { getAuthors } from '@/lib/data/authors'
 import { getPortalUser, listBatches } from '@/lib/data/portal'
@@ -20,18 +18,9 @@ import {
   setPortalAccountStatus,
   updatePortalAccountAction,
 } from '../actions'
+import { PortalUserForm, type PortalAccountValues } from '../portal-user-form'
 
 export const metadata: Metadata = { title: 'Portal account' }
-
-type AccountValues = {
-  name: string
-  email: string
-  role: PortalRole
-  status: 'active' | 'suspended'
-  authorSlug?: string
-  phone?: string
-  headline?: string
-}
 
 export default async function AdminPortalUserPage({
   params,
@@ -50,7 +39,7 @@ export default async function AdminPortalUserPage({
   const teaching =
     user.role === 'instructor' ? await listBatches({ instructorId: user.id }) : []
 
-  async function save(values: AccountValues): Promise<ActionResult> {
+  async function save(values: PortalAccountValues): Promise<ActionResult> {
     'use server'
     return updatePortalAccountAction(id, portalUserSchema.parse(values))
   }
@@ -87,8 +76,7 @@ export default async function AdminPortalUserPage({
       </div>
 
       <div className="grid gap-8">
-        <SimpleForm<AccountValues>
-          schema={portalUserSchema as never}
+        <PortalUserForm
           defaultValues={{
             name: user.name,
             email: user.email,
