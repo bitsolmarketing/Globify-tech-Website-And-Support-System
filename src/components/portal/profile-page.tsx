@@ -1,18 +1,11 @@
-import { SimpleForm } from '@/components/admin/simple-form'
 import { ChangePasswordForm, type ChangePasswordState } from '@/components/portal/change-password-form'
+import { ProfileForm, type ProfileValues } from '@/components/portal/profile-form'
 import { formatDateTime } from '@/components/portal/ui'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import type { PortalUserRow } from '@/db/schema'
 import type { ActionResult } from '@/lib/admin/guard'
-import { portalProfileSchema } from '@/lib/portal/schemas'
 
-type ProfileValues = {
-  name: string
-  phone?: string
-  headline?: string
-  bio?: string
-}
 
 /**
  * The profile screen, shared by both roles.
@@ -65,8 +58,7 @@ export function PortalProfilePage({
         </p>
       </Card>
 
-      <SimpleForm<ProfileValues>
-        schema={portalProfileSchema as never}
+      <ProfileForm
         defaultValues={{
           name: account.name,
           phone: account.phone ?? '',
