@@ -123,7 +123,7 @@ export const Checkbox = React.forwardRef<HTMLInputElement, React.ComponentPropsW
         'mt-0.5 size-5 shrink-0 cursor-pointer appearance-none rounded-md border-2 border-ink-300 bg-white',
         'transition-[background-color,border-color] duration-200',
         'checked:border-brand-900 checked:bg-brand-900',
-        "checked:bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22m3 8.5 3.2 3.2L13 5%22/%3E%3C/svg%3E')] checked:bg-[length:14px_14px] checked:bg-center checked:bg-no-repeat",
+        "checked:bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2016%2016%22%20fill=%22none%22%20stroke=%22white%22%20stroke-width=%222.5%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22%3E%3Cpath%20d=%22m3%208.5%203.2%203.2L13%205%22/%3E%3C/svg%3E')] checked:bg-[length:14px_14px] checked:bg-center checked:bg-no-repeat",
         'hover:border-brand-600',
         'focus-visible:ring-4 focus-visible:ring-brand-600/15',
         'aria-[invalid=true]:border-red-500',
